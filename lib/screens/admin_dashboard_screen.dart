@@ -18,11 +18,13 @@ import 'debug_screen.dart';
 class AdminDashboardScreen extends StatefulWidget {
   final String token;
   final String username;
+  final int adminStatus;
 
   const AdminDashboardScreen({
     super.key,
     required this.token,
     required this.username,
+    this.adminStatus = 0,
   });
 
   @override
@@ -41,9 +43,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   List<Professor> _currentAdmins = [];
   List<Elev> _currentElevi = [];
 
+  // Search and Collapse state
+  bool _isAdminsExpanded = true;
+  bool _isEleviExpanded = true;
+  late int _adminStatus;
+  final TextEditingController _adminSearchController = TextEditingController();
+  final TextEditingController _elevSearchController = TextEditingController();
+  String _adminSearchQuery = '';
+  String _elevSearchQuery = '';
+
   @override
   void initState() {
     super.initState();
+    _adminStatus = widget.adminStatus;
+    print(
+      'DEBUG: AdminDashboardScreen initialized with adminStatus: $_adminStatus',
+    );
     WidgetsBinding.instance.addObserver(this);
     _refreshList();
     _fabController = AnimationController(
@@ -55,12 +70,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       curve: Curves.elasticOut,
     );
     _fabController.forward();
+
+    _adminSearchController.addListener(() {
+      setState(() {
+        _adminSearchQuery = _adminSearchController.text.toLowerCase();
+      });
+    });
+
+    _elevSearchController.addListener(() {
+      setState(() {
+        _elevSearchQuery = _elevSearchController.text.toLowerCase();
+      });
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _fabController.dispose();
+    _adminSearchController.dispose();
+    _elevSearchController.dispose();
     super.dispose();
   }
 
@@ -82,6 +111,29 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     try {
       final response = await _adminService.getProfessors(widget.token);
       _currentAdmins = response.admins;
+
+      // Update admin status based on the list
+      try {
+        final currentUser = response.admins.firstWhere(
+          (admin) =>
+              admin.name == widget.username || admin.email == widget.username,
+          orElse: () => Professor(id: 0, email: '', name: '', admin: 0),
+        );
+
+        if (currentUser.id != 0 && currentUser.admin != _adminStatus) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(() {
+                _adminStatus = currentUser.admin;
+              });
+              print('DEBUG: Updated admin status from list: $_adminStatus');
+            }
+          });
+        }
+      } catch (e) {
+        print('DEBUG: Error matching admin user: $e');
+      }
+
       return response;
     } catch (e) {
       if (e.toString().contains('401')) {
@@ -118,9 +170,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     }
 
     final buffer = StringBuffer();
+    buffer.writeln('PROFESSORS');
     buffer.writeln('ID,Name,Email');
     for (var p in _currentAdmins) {
       buffer.writeln('${p.id},"${p.name}","${p.email}"');
+    }
+
+    buffer.writeln('');
+    buffer.writeln('');
+
+    buffer.writeln('STUDENTS');
+    buffer.writeln('ID,Name,Email,Matricol');
+    for (var e in _currentElevi) {
+      buffer.writeln('${e.id},"${e.name}","${e.email}","${e.codMatricol}"');
     }
 
     downloadCsvFile(buffer.toString(), 'professors_stats.csv');
@@ -891,46 +953,49 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                             break;
                         }
                       },
-                      itemBuilder: (BuildContext context) => [
-                        PopupMenuItem<String>(
-                          value: 'debug',
-                          child: Row(
-                            children: [
-                              const Icon(Icons.bug_report, size: 20),
-                              const SizedBox(width: 12),
-                              Text(l10n.debugConsole),
-                            ],
-                          ),
-                        ),
-                        PopupMenuItem<String>(
-                          value: 'csv',
-                          child: Row(
-                            children: [
-                              const Icon(Icons.download_rounded, size: 20),
-                              const SizedBox(width: 12),
-                              Text(l10n.downloadCsv),
-                            ],
-                          ),
-                        ),
-                        const PopupMenuDivider(),
-                        PopupMenuItem<String>(
-                          value: 'logout',
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.logout,
-                                size: 20,
-                                color: Colors.red,
+                      itemBuilder: (BuildContext context) {
+                        return [
+                          if (_adminStatus == 1)
+                            PopupMenuItem<String>(
+                              value: 'debug',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.bug_report, size: 20),
+                                  const SizedBox(width: 12),
+                                  Text(l10n.debugConsole),
+                                ],
                               ),
-                              const SizedBox(width: 12),
-                              Text(
-                                l10n.logout,
-                                style: const TextStyle(color: Colors.red),
-                              ),
-                            ],
+                            ),
+                          PopupMenuItem<String>(
+                            value: 'csv',
+                            child: Row(
+                              children: [
+                                const Icon(Icons.download_rounded, size: 20),
+                                const SizedBox(width: 12),
+                                Text(l10n.downloadCsv),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                          const PopupMenuDivider(),
+                          PopupMenuItem<String>(
+                            value: 'logout',
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.logout,
+                                  size: 20,
+                                  color: Colors.red,
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  l10n.logout,
+                                  style: const TextStyle(color: Colors.red),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ];
+                      },
                     ),
                   ),
                 ],
@@ -941,6 +1006,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   child: Center(child: CircularProgressIndicator()),
                 )
               else ...[
+                // Professors Section
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
@@ -949,9 +1015,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                       children: [
                         _buildChartsSection(admins, _currentElevi),
                         const SizedBox(height: 32),
+                        // Professors Header
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
+                            IconButton(
+                              icon: Icon(
+                                _isAdminsExpanded
+                                    ? Icons.keyboard_arrow_down_rounded
+                                    : Icons.keyboard_arrow_right_rounded,
+                                color: Colors.black.withOpacity(0.6),
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _isAdminsExpanded = !_isAdminsExpanded;
+                                });
+                              },
+                            ),
                             Text(
                               l10n.professors,
                               style: TextStyle(
@@ -961,6 +1040,48 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                                 letterSpacing: -0.5,
                               ),
                             ),
+                            Spacer(),
+                            // Search Bar
+                            if (_isAdminsExpanded)
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                  ),
+                                  child: Container(
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                        color: Colors.black.withOpacity(0.05),
+                                      ),
+                                    ),
+                                    child: TextField(
+                                      controller: _adminSearchController,
+                                      decoration: InputDecoration(
+                                        hintText: 'Search...',
+                                        hintStyle: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.grey[400],
+                                        ),
+                                        prefixIcon: Icon(
+                                          Icons.search,
+                                          size: 20,
+                                          color: Colors.grey[400],
+                                        ),
+                                        border: InputBorder.none,
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              vertical: 4,
+                                            ),
+                                        isDense: true,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 12,
@@ -989,112 +1110,132 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                     ),
                   ),
                 ),
-                SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate((context, index) {
-                      final admin = admins[index];
-                      // First item gets top rounded corners, last gets bottom
-                      final isFirst = index == 0;
-                      final isLast = index == admins.length - 1;
 
-                      return _AnimatedListItem(
-                        index: index,
-                        child: Container(
-                          margin: const EdgeInsets.only(
-                            bottom: 1,
-                          ), // Separator line
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.vertical(
-                              top: isFirst
-                                  ? const Radius.circular(20)
-                                  : Radius.zero,
-                              bottom: isLast
-                                  ? const Radius.circular(20)
-                                  : Radius.zero,
-                            ),
-                          ),
-                          child: ListTile(
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 12,
-                            ),
-                            leading: Container(
-                              width: 48,
-                              height: 48,
-                              decoration: BoxDecoration(
-                                color: Theme.of(
-                                  context,
-                                ).primaryColor.withOpacity(0.1),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  admin.name.isNotEmpty
-                                      ? admin.name[0].toUpperCase()
-                                      : '?',
-                                  style: TextStyle(
-                                    color: Theme.of(context).primaryColor,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 20,
+                if (_isAdminsExpanded)
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    sliver: Builder(
+                      builder: (context) {
+                        final filteredAdmins = admins.where((admin) {
+                          return admin.name.toLowerCase().contains(
+                                _adminSearchQuery,
+                              ) ||
+                              admin.email.toLowerCase().contains(
+                                _adminSearchQuery,
+                              );
+                        }).toList();
+
+                        return SliverList(
+                          delegate: SliverChildBuilderDelegate((
+                            context,
+                            index,
+                          ) {
+                            final admin = filteredAdmins[index];
+                            final isFirst = index == 0;
+                            final isLast = index == filteredAdmins.length - 1;
+
+                            return _AnimatedListItem(
+                              index: index,
+                              child: Container(
+                                margin: const EdgeInsets.only(
+                                  bottom: 1,
+                                ), // Separator line
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.vertical(
+                                    top: isFirst
+                                        ? const Radius.circular(20)
+                                        : Radius.zero,
+                                    bottom: isLast
+                                        ? const Radius.circular(20)
+                                        : Radius.zero,
+                                  ),
+                                ),
+                                child: ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                    vertical: 12,
+                                  ),
+                                  leading: Container(
+                                    width: 48,
+                                    height: 48,
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(
+                                        context,
+                                      ).primaryColor.withOpacity(0.1),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        admin.name.isNotEmpty
+                                            ? admin.name[0].toUpperCase()
+                                            : '?',
+                                        style: TextStyle(
+                                          color: Theme.of(context).primaryColor,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 20,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  title: Text(
+                                    admin.name,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 16,
+                                      letterSpacing: -0.3,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    admin.email,
+                                    style: TextStyle(
+                                      color: Colors.grey[500],
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: Icon(
+                                          Icons.lock_outline,
+                                          color: Colors.orange[400],
+                                          size: 22,
+                                        ),
+                                        onPressed: () =>
+                                            _showChangePasswordDialog(admin),
+                                        tooltip: l10n.changePassword,
+                                      ),
+                                      IconButton(
+                                        icon: Icon(
+                                          Icons.edit_outlined,
+                                          color: Colors.blue[400],
+                                          size: 22,
+                                        ),
+                                        onPressed: () => _showProfessorDialog(
+                                          professor: admin,
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: Icon(
+                                          Icons.delete_outline,
+                                          color: Colors.red[300],
+                                          size: 22,
+                                        ),
+                                        onPressed: () =>
+                                            _deleteProfessor(admin),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
-                            ),
-                            title: Text(
-                              admin.name,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 16,
-                                letterSpacing: -0.3,
-                              ),
-                            ),
-                            subtitle: Text(
-                              admin.email,
-                              style: TextStyle(
-                                color: Colors.grey[500],
-                                fontSize: 14,
-                              ),
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: Icon(
-                                    Icons.lock_outline,
-                                    color: Colors.orange[400],
-                                    size: 22,
-                                  ),
-                                  onPressed: () =>
-                                      _showChangePasswordDialog(admin),
-                                  tooltip: l10n.changePassword,
-                                ),
-                                IconButton(
-                                  icon: Icon(
-                                    Icons.edit_outlined,
-                                    color: Colors.blue[400],
-                                    size: 22,
-                                  ),
-                                  onPressed: () =>
-                                      _showProfessorDialog(professor: admin),
-                                ),
-                                IconButton(
-                                  icon: Icon(
-                                    Icons.delete_outline,
-                                    color: Colors.red[300],
-                                    size: 22,
-                                  ),
-                                  onPressed: () => _deleteProfessor(admin),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    }, childCount: admins.length),
+                            );
+                          }, childCount: filteredAdmins.length),
+                        );
+                      },
+                    ),
                   ),
-                ),
+
                 // Students Section
                 FutureBuilder<ElevListResponse>(
                   future: _eleviFuture,
@@ -1108,8 +1249,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
+                                IconButton(
+                                  icon: Icon(
+                                    _isEleviExpanded
+                                        ? Icons.keyboard_arrow_down_rounded
+                                        : Icons.keyboard_arrow_right_rounded,
+                                    color: Colors.black.withOpacity(0.6),
+                                  ),
+                                  onPressed: () {
+                                    setState(() {
+                                      _isEleviExpanded = !_isEleviExpanded;
+                                    });
+                                  },
+                                ),
                                 Text(
                                   l10n.students,
                                   style: TextStyle(
@@ -1119,6 +1272,51 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                                     letterSpacing: -0.5,
                                   ),
                                 ),
+                                Spacer(),
+                                // Search Bar
+                                if (_isEleviExpanded)
+                                  Expanded(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                      ),
+                                      child: Container(
+                                        height: 40,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.black.withOpacity(
+                                              0.05,
+                                            ),
+                                          ),
+                                        ),
+                                        child: TextField(
+                                          controller: _elevSearchController,
+                                          decoration: InputDecoration(
+                                            hintText: 'Search...',
+                                            hintStyle: TextStyle(
+                                              fontSize: 14,
+                                              color: Colors.grey[400],
+                                            ),
+                                            prefixIcon: Icon(
+                                              Icons.search,
+                                              size: 20,
+                                              color: Colors.grey[400],
+                                            ),
+                                            border: InputBorder.none,
+                                            contentPadding:
+                                                const EdgeInsets.symmetric(
+                                                  vertical: 4,
+                                                ),
+                                            isDense: true,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 12,
@@ -1154,7 +1352,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   builder: (context, snapshot) {
                     final elevi = snapshot.data?.elevi ?? [];
 
-                    if (elevi.isEmpty) {
+                    if (!_isEleviExpanded) {
+                      return const SliverToBoxAdapter(child: SizedBox.shrink());
+                    }
+
+                    final filteredElevi = elevi.where((elev) {
+                      final query = _elevSearchQuery;
+                      return elev.name.toLowerCase().contains(query) ||
+                          elev.email.toLowerCase().contains(query) ||
+                          elev.codMatricol.toLowerCase().contains(query);
+                    }).toList();
+
+                    if (filteredElevi.isEmpty) {
                       return const SliverToBoxAdapter(child: SizedBox.shrink());
                     }
 
@@ -1162,9 +1371,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       sliver: SliverList(
                         delegate: SliverChildBuilderDelegate((context, index) {
-                          final elev = elevi[index];
+                          final elev = filteredElevi[index];
                           final isFirst = index == 0;
-                          final isLast = index == elevi.length - 1;
+                          final isLast = index == filteredElevi.length - 1;
 
                           return _AnimatedListItem(
                             index: index,
@@ -1293,7 +1502,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                               ),
                             ),
                           );
-                        }, childCount: elevi.length),
+                        }, childCount: filteredElevi.length),
                       ),
                     );
                   },
@@ -1823,10 +2032,14 @@ class _AnimatedListItemState extends State<_AnimatedListItem>
       end: Offset.zero,
     ).animate(_animation);
 
-    // Staggered animation
-    Future.delayed(Duration(milliseconds: widget.index * 50), () {
-      if (mounted) _controller.forward();
-    });
+    // Staggered animation only for the first 10 items
+    if (widget.index < 10) {
+      Future.delayed(Duration(milliseconds: widget.index * 50), () {
+        if (mounted) _controller.forward();
+      });
+    } else {
+      _controller.value = 1.0;
+    }
   }
 
   @override

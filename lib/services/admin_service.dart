@@ -62,7 +62,12 @@ class AdminService {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
         },
-        body: jsonEncode({'nume': name, 'email': email, 'password': password}),
+        body: jsonEncode({
+          'nume': name,
+          'email': email,
+          'password': password,
+          'admin': 0,
+        }),
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {

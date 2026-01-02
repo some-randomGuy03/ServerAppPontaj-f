@@ -13,20 +13,27 @@ class AuthService {
   static const String loginEndpoint = '/admin/login';
   static const String _tokenKey = 'auth_token';
   static const String _usernameKey = 'auth_username';
+  static const String _adminKey = 'auth_admin';
 
-  Future<void> saveSession(String token, String username) async {
+  Future<void> saveSession(String token, String username, int admin) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_tokenKey, token);
     await prefs.setString(_usernameKey, username);
+    await prefs.setInt(_adminKey, admin);
   }
 
   Future<Map<String, String>?> getSession() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(_tokenKey);
     final username = prefs.getString(_usernameKey);
+    final admin = prefs.getInt(_adminKey);
 
     if (token != null && username != null) {
-      return {'token': token, 'username': username};
+      return {
+        'token': token,
+        'username': username,
+        'admin': (admin ?? 0).toString(),
+      };
     }
     return null;
   }

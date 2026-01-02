@@ -2,14 +2,21 @@ class Professor {
   final int id;
   final String email;
   final String name;
+  final int admin;
 
-  Professor({required this.id, required this.email, required this.name});
+  Professor({
+    required this.id,
+    required this.email,
+    required this.name,
+    this.admin = 0,
+  });
 
   factory Professor.fromJson(Map<String, dynamic> json) {
     return Professor(
       id: json['ID'] as int? ?? json['id'] as int? ?? 0,
       email: json['Email'] as String? ?? json['email'] as String? ?? '',
       name: json['Name'] as String? ?? json['nume'] as String? ?? '',
+      admin: json['Admin'] as int? ?? json['admin'] as int? ?? 0,
     );
   }
 }

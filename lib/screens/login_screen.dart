@@ -48,12 +48,21 @@ class _LoginScreenState extends State<LoginScreen>
   Future<void> _checkSession() async {
     final session = await _authService.getSession();
     if (session != null && mounted) {
+      final token = session['token']!;
+      final username = session['username']!;
+      final admin = int.tryParse(session['admin'] ?? '0') ?? 0;
+
+      print(
+        'DEBUG: Session restored. Admin status from prefs: ${session['admin']}, parsed: $admin',
+      );
+
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
           pageBuilder: (context, animation, secondaryAnimation) =>
               AdminDashboardScreen(
-                token: session['token']!,
-                username: session['username']!,
+                token: token,
+                username: username,
+                adminStatus: admin,
               ),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             return FadeTransition(opacity: animation, child: child);
@@ -90,12 +99,18 @@ class _LoginScreenState extends State<LoginScreen>
       });
 
       if (response.isSuccess && mounted) {
+        final adminStatus = response.admin ?? 0;
+        print(
+          'DEBUG: Login success. Admin status from API: \${response.admin}, used: \$adminStatus',
+        );
+
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
             pageBuilder: (context, animation, secondaryAnimation) =>
                 AdminDashboardScreen(
                   token: response.accessToken!,
                   username: response.username ?? _usernameController.text,
+                  adminStatus: adminStatus,
                 ),
             transitionsBuilder:
                 (context, animation, secondaryAnimation, child) {
@@ -107,6 +122,7 @@ class _LoginScreenState extends State<LoginScreen>
         await _authService.saveSession(
           response.accessToken!,
           response.username ?? _usernameController.text,
+          adminStatus,
         );
       }
     }
