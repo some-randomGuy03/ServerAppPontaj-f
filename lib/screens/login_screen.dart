@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:pontaj_admin/l10n/app_localizations.dart';
 import '../models/login_response.dart';
 import '../services/auth_service.dart';
@@ -384,6 +385,32 @@ class _LoginScreenState extends State<LoginScreen>
                                   ),
                                 ),
                               ],
+                              const SizedBox(height: 32),
+                              // APK Download Button
+                              OutlinedButton.icon(
+                                onPressed: () async {
+                                  final uri = Uri.parse(
+                                    'https://github.com/some-randomGuy03/pontaj_mobile/releases/download/v1.0.1/app-release.apk',
+                                  );
+                                  if (await canLaunchUrl(uri)) {
+                                    await launchUrl(
+                                      uri,
+                                      mode: LaunchMode.externalApplication,
+                                    );
+                                  }
+                                },
+                                icon: const Icon(Icons.download),
+                                label: const Text('Download Mobile App'),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16,
+                                    horizontal: 24,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                         ),
