@@ -14,6 +14,7 @@ import '../utils/apk_downloader.dart';
 import '../widgets/language_switcher.dart';
 import 'login_screen.dart';
 import 'debug_screen.dart';
+import 'reports_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   final String token;
@@ -948,6 +949,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                           case 'csv':
                             _downloadCsv();
                             break;
+                          case 'reports':
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    ReportsScreen(token: widget.token),
+                              ),
+                            );
+                            break;
                           case 'logout':
                             _handleLogout();
                             break;
@@ -976,7 +985,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                               ],
                             ),
                           ),
+                          PopupMenuItem<String>(
+                            value: 'reports',
+                            child: Row(
+                              children: [
+                                const Icon(Icons.analytics_outlined, size: 20),
+                                const SizedBox(width: 12),
+                                Text('Reports'),
+                              ],
+                            ),
+                          ),
                           const PopupMenuDivider(),
+
                           PopupMenuItem<String>(
                             value: 'logout',
                             child: Row(

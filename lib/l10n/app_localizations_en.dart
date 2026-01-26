@@ -141,7 +141,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get clear => 'Clear';
 
   @override
-  String get searchLogs => 'Search logs...';
+  String get searchLogs => 'Search Logs';
 
   @override
   String get all => 'All';
@@ -210,4 +210,22 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get codMatricol => 'Student Code';
+
+  @override
+  String get reports => 'Reports';
+
+  @override
+  String get scanHistory => 'Scan History';
+
+  @override
+  String get enrolledStudents => 'Enrolled Students';
+
+  @override
+  String get dateRange => 'Date Range';
+
+  @override
+  String get noScansFound => 'No scans found for this period';
+
+  @override
+  String get noEnrolledStudents => 'No enrolled students';
 }

@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/professor.dart';
+import '../models/scan_log.dart';
+import '../models/elev.dart';
+import 'package:intl/intl.dart';
 import 'auth_service.dart';
 import 'error_service.dart';
 
@@ -212,6 +215,98 @@ class AdminService {
         );
       }
       throw Exception('Error changing password: $e');
+    }
+  }
+
+  Future<ScanLogResponse> getScansByDate(
+    String token,
+    DateTime start,
+    DateTime end,
+  ) async {
+    final startStr = DateFormat('yyyy-MM-dd').format(start);
+    final endStr = DateFormat('yyyy-MM-dd').format(end);
+    final uri = Uri.parse(
+      '${AuthService.baseUrl}/admin/scans_by_date?start=$startStr&end=$endStr',
+    );
+
+    try {
+      final response = await http.get(
+        uri,
+        headers: {
+          'accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        ErrorService().logInfo(
+          'GET /admin/scans_by_date - Success',
+          input: 'Start: $startStr, End: $endStr',
+          output: 'Count: ${data['count']}',
+        );
+        return ScanLogResponse.fromJson(data);
+      } else {
+        ErrorService().showError(
+          'GET /admin/scans_by_date - Failed',
+          input: 'Start: $startStr, End: $endStr',
+          output: 'Status: ${response.statusCode}, Body: ${response.body}',
+          notificationMessage: 'Server Error',
+        );
+        throw Exception(
+          'Failed to load scans: ${response.statusCode} ${response.body}',
+        );
+      }
+    } catch (e) {
+      if (!e.toString().contains('Server Error')) {
+        ErrorService().showError(
+          'Error fetching scans: $e',
+          notificationMessage: 'Server Error',
+        );
+      }
+      throw Exception('Error fetching scans: $e');
+    }
+  }
+
+  Future<ElevListResponse> getEleviEnrolled(String token) async {
+    final uri = Uri.parse('${AuthService.baseUrl}/admin/elevi_enrolled');
+
+    try {
+      final response = await http.get(
+        uri,
+        headers: {
+          'accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        ErrorService().logInfo(
+          'GET /admin/elevi_enrolled - Success',
+          input: 'GET /admin/elevi_enrolled',
+          output: 'Count: ${data['count']}',
+        );
+        return ElevListResponse.fromJson(data);
+      } else {
+        ErrorService().showError(
+          'GET /admin/elevi_enrolled - Failed',
+          input: 'GET /admin/elevi_enrolled',
+          output: 'Status: ${response.statusCode}, Body: ${response.body}',
+          notificationMessage: 'Server Error',
+        );
+        throw Exception(
+          'Failed to load enrolled students: ${response.statusCode} ${response.body}',
+        );
+      }
+    } catch (e) {
+      if (!e.toString().contains('Server Error')) {
+        ErrorService().showError(
+          'Error fetching enrolled students: $e',
+          notificationMessage: 'Server Error',
+        );
+      }
+      throw Exception('Error fetching enrolled students: $e');
     }
   }
 }

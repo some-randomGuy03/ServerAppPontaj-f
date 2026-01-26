@@ -79,5 +79,12 @@
     "activeStatus": "Active Status",
     "active": "Active",
     "inactive": "Inactive",
-    "codMatricol": "Student Code"
+    "codMatricol": "Student Code",
+    "reports": "Reports",
+    "scanHistory": "Scan History",
+    "enrolledStudents": "Enrolled Students",
+    "dateRange": "Date Range",
+    "searchLogs": "Search Logs",
+    "noScansFound": "No scans found for this period",
+    "noEnrolledStudents": "No enrolled students"
 }

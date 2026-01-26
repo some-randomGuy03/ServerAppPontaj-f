@@ -144,7 +144,7 @@ class AppLocalizationsRo extends AppLocalizations {
   String get clear => 'Șterge';
 
   @override
-  String get searchLogs => 'Caută jurnale...';
+  String get searchLogs => 'Caută Jurnale';
 
   @override
   String get all => 'Toate';
@@ -213,4 +213,22 @@ class AppLocalizationsRo extends AppLocalizations {
 
   @override
   String get codMatricol => 'Cod Matricol';
+
+  @override
+  String get reports => 'Rapoarte';
+
+  @override
+  String get scanHistory => 'Istoric Scanări';
+
+  @override
+  String get enrolledStudents => 'Elevi Înscriși';
+
+  @override
+  String get dateRange => 'Interval Dată';
+
+  @override
+  String get noScansFound => 'Nu s-au găsit scanări pentru această perioadă';
+
+  @override
+  String get noEnrolledStudents => 'Niciun elev înscris';
 }

@@ -359,7 +359,7 @@ abstract class AppLocalizations {
   /// No description provided for @searchLogs.
   ///
   /// In ro, this message translates to:
-  /// **'Caută jurnale...'**
+  /// **'Caută Jurnale'**
   String get searchLogs;
 
   /// No description provided for @all.
@@ -493,6 +493,42 @@ abstract class AppLocalizations {
   /// In ro, this message translates to:
   /// **'Cod Matricol'**
   String get codMatricol;
+
+  /// No description provided for @reports.
+  ///
+  /// In ro, this message translates to:
+  /// **'Rapoarte'**
+  String get reports;
+
+  /// No description provided for @scanHistory.
+  ///
+  /// In ro, this message translates to:
+  /// **'Istoric Scanări'**
+  String get scanHistory;
+
+  /// No description provided for @enrolledStudents.
+  ///
+  /// In ro, this message translates to:
+  /// **'Elevi Înscriși'**
+  String get enrolledStudents;
+
+  /// No description provided for @dateRange.
+  ///
+  /// In ro, this message translates to:
+  /// **'Interval Dată'**
+  String get dateRange;
+
+  /// No description provided for @noScansFound.
+  ///
+  /// In ro, this message translates to:
+  /// **'Nu s-au găsit scanări pentru această perioadă'**
+  String get noScansFound;
+
+  /// No description provided for @noEnrolledStudents.
+  ///
+  /// In ro, this message translates to:
+  /// **'Niciun elev înscris'**
+  String get noEnrolledStudents;
 }
 
 class _AppLocalizationsDelegate

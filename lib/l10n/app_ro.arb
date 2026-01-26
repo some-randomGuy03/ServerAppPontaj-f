@@ -82,5 +82,12 @@
     "activeStatus": "Status Activ",
     "active": "Activ",
     "inactive": "Inactiv",
-    "codMatricol": "Cod Matricol"
+    "codMatricol": "Cod Matricol",
+    "reports": "Rapoarte",
+    "scanHistory": "Istoric Scanări",
+    "enrolledStudents": "Elevi Înscriși",
+    "dateRange": "Interval Dată",
+    "searchLogs": "Caută Jurnale",
+    "noScansFound": "Nu s-au găsit scanări pentru această perioadă",
+    "noEnrolledStudents": "Niciun elev înscris"
 }
