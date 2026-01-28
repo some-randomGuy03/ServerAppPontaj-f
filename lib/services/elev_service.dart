@@ -47,6 +47,48 @@ class ElevService {
     }
   }
 
+  Future<ElevListResponse> getEleviEnrolled(String token) async {
+    final uri = Uri.parse('${AuthService.baseUrl}/admin/elevi_enrolled');
+
+    try {
+      final response = await http.get(
+        uri,
+        headers: {
+          'accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        ErrorService().logInfo(
+          'GET /admin/elevi_enrolled - Success',
+          input: 'GET /admin/elevi_enrolled',
+          output: 'Count: ${data['count']}',
+        );
+        return ElevListResponse.fromJson(data);
+      } else {
+        ErrorService().showError(
+          'GET /admin/elevi_enrolled - Failed',
+          input: 'GET /admin/elevi_enrolled',
+          output: 'Status: ${response.statusCode}, Body: ${response.body}',
+          notificationMessage: 'Server Error',
+        );
+        throw Exception(
+          'Failed to load enrolled elevi: ${response.statusCode} ${response.body}',
+        );
+      }
+    } catch (e) {
+      if (!e.toString().contains('401')) {
+        ErrorService().showError(
+          'Error fetching enrolled elevi: $e',
+          notificationMessage: 'Server Error',
+        );
+      }
+      throw Exception('Error fetching enrolled elevi: $e');
+    }
+  }
+
   Future<Elev> addElev(
     String token,
     String nume,

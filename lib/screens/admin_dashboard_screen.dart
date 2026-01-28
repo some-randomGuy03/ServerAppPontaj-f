@@ -15,7 +15,6 @@ import '../utils/apk_downloader.dart';
 import '../widgets/language_switcher.dart';
 import 'login_screen.dart';
 import 'debug_screen.dart';
-import 'reports_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   final String token;
@@ -42,20 +41,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   late AnimationController _fabController;
   late Animation<double> _fabAnimation;
   List<Professor> _currentAdmins = [];
-  List<Elev> _currentElevi = [];
+  List<Elev> _currentElevi = []; // Enrolled students
+  List<Elev> _allElevi = []; // All students
 
   // Search and Collapse state
   // bool _isAdminsExpanded = true; // Removed
-  // bool _isEleviExpanded = true; // Removed
+  bool _isEleviExpanded = true;
   late int _adminStatus;
   final TextEditingController _adminSearchController = TextEditingController();
   final TextEditingController _elevSearchController = TextEditingController();
   // String _adminSearchQuery = ''; // Removed
-  // String _elevSearchQuery = ''; // Removed
+  String _elevSearchQuery = '';
 
   // Report/Scan State
-  DateTime _startDate = DateTime.now().subtract(const Duration(days: 7));
-  DateTime _endDate = DateTime.now();
+  DateTime _selectedMonth = DateTime.now();
+  DateTime? _selectedDay;
+  bool _isHistoryExpanded = true;
   List<ScanLog>? _scans;
   bool _isLoadingScans = false;
   String? _scansError;
@@ -77,6 +78,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       parent: _fabController,
       curve: Curves.elasticOut,
     );
+    _elevSearchController.addListener(() {
+      setState(() {
+        _elevSearchQuery = _elevSearchController.text.toLowerCase();
+      });
+    });
     _fabController.forward();
   }
 
@@ -145,19 +151,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     }
   }
 
-  Future<ElevListResponse> _fetchElevi() async {
+  Future<void> _fetchElevi() async {
     try {
-      final response = await _elevService.getElevi(widget.token);
-      _currentElevi = response.elevi;
-      return response;
+      // Fetch Enrolled - for the bottom list
+      final enrolledResponse = await _elevService.getEleviEnrolled(
+        widget.token,
+      );
+      _currentElevi = enrolledResponse.elevi;
+
+      // Fetch All - for the stats card and modal
+      final allResponse = await _elevService.getElevi(widget.token);
+      _allElevi = allResponse.elevi;
     } catch (e) {
-      if (e.toString().contains('401')) {
-        // Token expired or invalid
-        if (mounted) {
-          _handleLogout();
-        }
-      }
-      rethrow;
+      print('Error fetching elevi: $e');
     }
   }
 
@@ -168,10 +174,48 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     });
 
     try {
+      // Calculate start and end dates based on selection
+      final DateTime startDate;
+      final DateTime endDate;
+
+      if (_selectedDay != null) {
+        // Fetch for specific day
+        startDate = DateTime(
+          _selectedDay!.year,
+          _selectedDay!.month,
+          _selectedDay!.day,
+        );
+        endDate = DateTime(
+          _selectedDay!.year,
+          _selectedDay!.month,
+          _selectedDay!.day,
+          23,
+          59,
+          59,
+        );
+      } else {
+        // Fetch for entire month
+        startDate = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
+        // Get last day of month
+        final lastDay = DateTime(
+          _selectedMonth.year,
+          _selectedMonth.month + 1,
+          0,
+        );
+        endDate = DateTime(
+          lastDay.year,
+          lastDay.month,
+          lastDay.day,
+          23,
+          59,
+          59,
+        );
+      }
+
       final response = await _adminService.getScansByDate(
         widget.token,
-        _startDate,
-        _endDate,
+        startDate,
+        endDate,
       );
       setState(() {
         _scans = response.data;
@@ -188,23 +232,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           _isLoadingScans = false;
         });
       }
-    }
-  }
-
-  Future<void> _selectDateRange(BuildContext context) async {
-    final DateTimeRange? picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2030),
-      initialDateRange: DateTimeRange(start: _startDate, end: _endDate),
-    );
-
-    if (picked != null) {
-      setState(() {
-        _startDate = picked.start;
-        _endDate = picked.end;
-      });
-      _fetchScans();
     }
   }
 
@@ -498,7 +525,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   valueListenable: _elevSearchController,
                   builder: (context, value, child) {
                     final query = value.text.toLowerCase();
-                    final filteredElevi = _currentElevi.where((elev) {
+                    final filteredElevi = _allElevi.where((elev) {
                       return elev.name.toLowerCase().contains(query) ||
                           elev.email.toLowerCase().contains(query) ||
                           elev.codMatricol.toLowerCase().contains(query);
@@ -1415,14 +1442,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                           case 'csv':
                             _downloadCsv();
                             break;
-                          case 'reports':
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    ReportsScreen(token: widget.token),
-                              ),
-                            );
-                            break;
                           case 'logout':
                             _handleLogout();
                             break;
@@ -1448,16 +1467,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                                 const Icon(Icons.download_rounded, size: 20),
                                 const SizedBox(width: 12),
                                 Text(l10n.downloadCsv),
-                              ],
-                            ),
-                          ),
-                          PopupMenuItem<String>(
-                            value: 'reports',
-                            child: Row(
-                              children: [
-                                const Icon(Icons.analytics_outlined, size: 20),
-                                const SizedBox(width: 12),
-                                Text('Reports'),
                               ],
                             ),
                           ),
@@ -1496,11 +1505,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                    child: _buildChartsSection(admins, _currentElevi),
+                    child: _buildChartsSection(admins, _allElevi),
                   ),
                 ),
 
-                // Reports Control Section
+                // Reports Control & History Section
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
@@ -1523,82 +1532,170 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            l10n.scanHistory,
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black.withOpacity(0.8),
+                          InkWell(
+                            onTap: () {
+                              setState(() {
+                                _isHistoryExpanded = !_isHistoryExpanded;
+                              });
+                            },
+                            child: Row(
+                              children: [
+                                Text(
+                                  l10n.scanHistory,
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black.withOpacity(0.8),
+                                  ),
+                                ),
+                                const Spacer(),
+                                Icon(
+                                  _isHistoryExpanded
+                                      ? Icons.keyboard_arrow_up
+                                      : Icons.keyboard_arrow_down,
+                                  color: Colors.grey,
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: Colors.blue.withOpacity(0.1),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.calendar_month,
-                                  color: Colors.blue,
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    l10n.dateRange,
-                                    style: TextStyle(
-                                      color: Colors.grey[600],
-                                      fontSize: 12,
+                          if (_isHistoryExpanded) ...[
+                            const SizedBox(height: 16),
+                            // Year/Month Selector (12 dots)
+                            SizedBox(
+                              height: 60,
+                              child: ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: 12,
+                                itemBuilder: (context, index) {
+                                  final monthDate = DateTime(
+                                    DateTime.now().year,
+                                    index + 1,
+                                  );
+                                  final isSelected =
+                                      _selectedMonth.month == index + 1 &&
+                                      _selectedMonth.year == monthDate.year;
+
+                                  return GestureDetector(
+                                    onTap: () {
+                                      setState(() {
+                                        _selectedMonth = monthDate;
+                                        _selectedDay =
+                                            null; // Reset day selection
+                                      });
+                                      _fetchScans();
+                                    },
+                                    child: Container(
+                                      width: 40,
+                                      margin: const EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: isSelected
+                                            ? Colors.blue.withOpacity(0.1)
+                                            : Colors.transparent,
+                                        shape: BoxShape.circle,
+                                        border: isSelected
+                                            ? Border.all(
+                                                color: Colors.blue,
+                                                width: 2,
+                                              )
+                                            : null,
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          DateFormat('MMM').format(monthDate),
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: isSelected
+                                                ? FontWeight.bold
+                                                : FontWeight.normal,
+                                            color: isSelected
+                                                ? Colors.blue
+                                                : Colors.grey,
+                                          ),
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                                  Text(
-                                    '${DateFormat('MMM d').format(_startDate)} - ${DateFormat('MMM d').format(_endDate)}',
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
+                                  );
+                                },
                               ),
-                              const Spacer(),
-                              ElevatedButton.icon(
-                                onPressed: () => _selectDateRange(context),
-                                icon: const Icon(Icons.edit_calendar, size: 16),
-                                label: const Text('Change'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blue[50],
-                                  foregroundColor: Colors.blue[700],
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: _fetchScans,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue[600],
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              child: Text(l10n.searchLogs),
                             ),
-                          ),
+                            const SizedBox(height: 8),
+                            // Day Selector
+                            SizedBox(
+                              height: 60,
+                              child: ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: DateTime(
+                                  _selectedMonth.year,
+                                  _selectedMonth.month + 1,
+                                  0,
+                                ).day, // Days in month
+                                itemBuilder: (context, index) {
+                                  final day = index + 1;
+                                  final dayDate = DateTime(
+                                    _selectedMonth.year,
+                                    _selectedMonth.month,
+                                    day,
+                                  );
+                                  final isSelected =
+                                      _selectedDay?.day == day &&
+                                      _selectedDay?.month ==
+                                          _selectedMonth.month;
+
+                                  return GestureDetector(
+                                    onTap: () {
+                                      setState(() {
+                                        _selectedDay = isSelected
+                                            ? null
+                                            : dayDate;
+                                      });
+                                      _fetchScans();
+                                    },
+                                    child: Container(
+                                      width: 45,
+                                      margin: const EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: isSelected
+                                            ? Colors.blue
+                                            : Colors.grey.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Text(
+                                            DateFormat('E').format(dayDate),
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: isSelected
+                                                  ? Colors.white.withOpacity(
+                                                      0.8,
+                                                    )
+                                                  : Colors.grey,
+                                            ),
+                                          ),
+                                          Text(
+                                            '$day',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                              color: isSelected
+                                                  ? Colors.white
+                                                  : Colors.black87,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -1653,90 +1750,399 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 else
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate((context, index) {
-                        final scan = _scans![index];
-                        final isFirst = index == 0;
-                        final isLast = index == _scans!.length - 1;
+                    sliver: Builder(
+                      builder: (context) {
+                        // Group scans by student ID
+                        final Map<String, List<ScanLog>> groupedScans = {};
+                        for (var scan in _scans!) {
+                          final key = '${scan.name}_${scan.idElev}';
+                          if (!groupedScans.containsKey(key)) {
+                            groupedScans[key] = [];
+                          }
+                          groupedScans[key]!.add(scan);
+                        }
 
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 1),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.vertical(
-                              top: isFirst
-                                  ? const Radius.circular(20)
-                                  : Radius.zero,
-                              bottom: isLast
-                                  ? const Radius.circular(20)
-                                  : Radius.zero,
-                            ),
-                          ),
-                          child: ListTile(
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 12,
-                            ),
-                            leading: Container(
-                              width: 48,
-                              height: 48,
+                        final keys = groupedScans.keys.toList();
+
+                        return SliverList(
+                          delegate: SliverChildBuilderDelegate((
+                            context,
+                            index,
+                          ) {
+                            final key = keys[index];
+                            final studentScans = groupedScans[key]!;
+                            final firstScan = studentScans.first;
+                            final isFirst = index == 0;
+                            final isLast = index == keys.length - 1;
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 1),
                               decoration: BoxDecoration(
-                                color: Colors.blue.withOpacity(0.1),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  scan.name.isNotEmpty
-                                      ? scan.name[0].toUpperCase()
-                                      : '?',
-                                  style: TextStyle(
-                                    color: Colors.blue[700],
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 18,
-                                  ),
+                                color: Colors.white,
+                                borderRadius: BorderRadius.vertical(
+                                  top: isFirst
+                                      ? const Radius.circular(20)
+                                      : Radius.zero,
+                                  bottom: isLast
+                                      ? const Radius.circular(20)
+                                      : Radius.zero,
                                 ),
                               ),
-                            ),
-                            title: Text(
-                              scan.name,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 16,
-                                letterSpacing: -0.3,
-                              ),
-                            ),
-                            subtitle: Text(
-                              'ID: ${scan.idElev}',
-                              style: TextStyle(
-                                color: Colors.grey[500],
-                                fontSize: 14,
-                              ),
-                            ),
-                            trailing: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  DateFormat('HH:mm:ss').format(scan.scanTime),
+                              child: ExpansionTile(
+                                shape: Border.all(color: Colors.transparent),
+                                tilePadding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 8,
+                                ),
+                                leading: Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.withOpacity(0.1),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      firstScan.name.isNotEmpty
+                                          ? firstScan.name[0].toUpperCase()
+                                          : '?',
+                                      style: TextStyle(
+                                        color: Colors.blue[700],
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 18,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                title: Text(
+                                  firstScan.name,
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 16,
+                                    letterSpacing: -0.3,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  'ID: ${firstScan.idElev}',
+                                  style: TextStyle(
+                                    color: Colors.grey[500],
                                     fontSize: 14,
                                   ),
                                 ),
-                                Text(
-                                  DateFormat(
-                                    'yyyy-MM-dd',
-                                  ).format(scan.scanTime),
-                                  style: TextStyle(
-                                    color: Colors.grey[400],
-                                    fontSize: 12,
+                                trailing: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.shade50,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '${studentScans.length} scans',
+                                    style: TextStyle(
+                                      color: Colors.blue[700],
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                    ),
                                   ),
                                 ),
-                              ],
-                            ),
-                          ),
+                                children: studentScans.map((scan) {
+                                  return ListTile(
+                                    dense: true,
+                                    contentPadding: const EdgeInsets.only(
+                                      left: 80,
+                                      right: 20,
+                                      bottom: 8,
+                                    ),
+                                    title: Text(
+                                      DateFormat(
+                                        'EEEE, MMM d, yyyy',
+                                      ).format(scan.scanTime),
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    trailing: Text(
+                                      DateFormat(
+                                        'HH:mm:ss',
+                                      ).format(scan.scanTime),
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontFamily: 'Monospace',
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            );
+                          }, childCount: keys.length),
                         );
-                      }, childCount: _scans!.length),
+                      },
+                    ),
+                  ),
+
+                // Enrolled Students Section
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 32, 20, 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        InkWell(
+                          onTap: () {
+                            setState(() {
+                              _isEleviExpanded = !_isEleviExpanded;
+                            });
+                          },
+                          child: Row(
+                            children: [
+                              Icon(
+                                _isEleviExpanded
+                                    ? Icons.keyboard_arrow_down_rounded
+                                    : Icons.keyboard_arrow_right_rounded,
+                                color: Colors.black.withOpacity(0.6),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                l10n.enrolledStudents,
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black.withOpacity(0.8),
+                                  letterSpacing: -0.5,
+                                ),
+                              ),
+                              const Spacer(),
+                              // Search Bar
+                              if (_isEleviExpanded)
+                                Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                    ),
+                                    child: Container(
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(
+                                          color: Colors.black.withOpacity(0.05),
+                                        ),
+                                      ),
+                                      child: TextField(
+                                        controller: _elevSearchController,
+                                        decoration: InputDecoration(
+                                          hintText: 'Search...',
+                                          hintStyle: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.grey[400],
+                                          ),
+                                          prefixIcon: Icon(
+                                            Icons.search,
+                                            size: 20,
+                                            color: Colors.grey[400],
+                                          ),
+                                          border: InputBorder.none,
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                                vertical: 4,
+                                              ),
+                                          isDense: true,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: Colors.black.withOpacity(0.05),
+                                  ),
+                                ),
+                                child: Text(
+                                  '${_currentElevi.length} ${l10n.total}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                    ),
+                  ),
+                ),
+
+                if (_isEleviExpanded)
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    sliver: Builder(
+                      builder: (context) {
+                        final filteredElevi = _currentElevi.where((elev) {
+                          final query = _elevSearchQuery;
+                          return elev.name.toLowerCase().contains(query) ||
+                              elev.email.toLowerCase().contains(query) ||
+                              elev.codMatricol.toLowerCase().contains(query);
+                        }).toList();
+
+                        if (filteredElevi.isEmpty) {
+                          return const SliverToBoxAdapter(
+                            child: SizedBox.shrink(),
+                          );
+                        }
+
+                        return SliverList(
+                          delegate: SliverChildBuilderDelegate((
+                            context,
+                            index,
+                          ) {
+                            final elev = filteredElevi[index];
+                            final isFirst = index == 0;
+                            final isLast = index == filteredElevi.length - 1;
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 1),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.vertical(
+                                  top: isFirst
+                                      ? const Radius.circular(20)
+                                      : Radius.zero,
+                                  bottom: isLast
+                                      ? const Radius.circular(20)
+                                      : Radius.zero,
+                                ),
+                              ),
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 12,
+                                ),
+                                leading: Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: elev.activ == 1
+                                        ? Colors.green.withOpacity(0.1)
+                                        : Colors.grey.withOpacity(0.1),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      elev.name.isNotEmpty
+                                          ? elev.name[0].toUpperCase()
+                                          : '?',
+                                      style: TextStyle(
+                                        color: elev.activ == 1
+                                            ? Colors.green
+                                            : Colors.grey,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 20,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                title: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        elev.name,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 16,
+                                          letterSpacing: -0.3,
+                                        ),
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: elev.activ == 1
+                                            ? Colors.green.withOpacity(0.1)
+                                            : Colors.grey.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        elev.activ == 1
+                                            ? l10n.active
+                                            : l10n.inactive,
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                          color: elev.activ == 1
+                                              ? Colors.green
+                                              : Colors.grey,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      elev.email,
+                                      style: TextStyle(
+                                        color: Colors.grey[500],
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    Text(
+                                      '${l10n.codMatricol}: ${elev.codMatricol}',
+                                      style: TextStyle(
+                                        color: Colors.grey[400],
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: Icon(
+                                        Icons.edit_outlined,
+                                        color: Colors.blue[400],
+                                        size: 22,
+                                      ),
+                                      onPressed: () {
+                                        _showElevDialog(elev: elev);
+                                      },
+                                    ),
+                                    IconButton(
+                                      icon: Icon(
+                                        Icons.delete_outline,
+                                        color: Colors.red[300],
+                                        size: 22,
+                                      ),
+                                      onPressed: () {
+                                        _deleteElev(elev);
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }, childCount: filteredElevi.length),
+                        );
+                      },
                     ),
                   ),
 
