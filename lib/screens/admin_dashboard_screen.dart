@@ -185,31 +185,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           _selectedDay!.month,
           _selectedDay!.day,
         );
-        endDate = DateTime(
-          _selectedDay!.year,
-          _selectedDay!.month,
-          _selectedDay!.day,
-          23,
-          59,
-          59,
-        );
+        // Set end date to the next day to satisfy start < end validation
+        endDate = startDate.add(const Duration(days: 1));
       } else {
         // Fetch for entire month
         startDate = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
-        // Get last day of month
-        final lastDay = DateTime(
-          _selectedMonth.year,
-          _selectedMonth.month + 1,
-          0,
-        );
-        endDate = DateTime(
-          lastDay.year,
-          lastDay.month,
-          lastDay.day,
-          23,
-          59,
-          59,
-        );
+        // Set end date to start of next month to capture all days in current month (explicitly exclusive end logic usually)
+        endDate = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 1);
       }
 
       final response = await _adminService.getScansByDate(

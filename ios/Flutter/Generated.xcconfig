@@ -1,8 +1,8 @@
 // This is a generated file; do not edit or check into version control.
-FLUTTER_ROOT=C:\dev\flutter
-FLUTTER_APPLICATION_PATH=C:\Users\xynnp\Documents\Projects\PontajAdmin\pontaj_admin
+FLUTTER_ROOT=/home/xynnpg/Documents/flutter/flutter
+FLUTTER_APPLICATION_PATH=/home/xynnpg/Documents/ServerAppPontaj
 COCOAPODS_PARALLEL_CODE_SIGN=true
-FLUTTER_TARGET=lib\main.dart
+FLUTTER_TARGET=lib/main.dart
 FLUTTER_BUILD_DIR=build
 FLUTTER_BUILD_NAME=1.0.0
 FLUTTER_BUILD_NUMBER=1
