@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:pontaj_admin/l10n/app_localizations.dart';
 import '../models/professor.dart';
 import '../models/elev.dart';
+import '../models/scan_log.dart';
 import '../services/admin_service.dart';
 import '../services/elev_service.dart';
 import '../services/auth_service.dart';
@@ -38,20 +39,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   final _elevService = ElevService();
   final _authService = AuthService();
   late Future<AdminListResponse> _adminsFuture;
-  late Future<ElevListResponse> _eleviFuture;
   late AnimationController _fabController;
   late Animation<double> _fabAnimation;
   List<Professor> _currentAdmins = [];
   List<Elev> _currentElevi = [];
 
   // Search and Collapse state
-  bool _isAdminsExpanded = true;
-  bool _isEleviExpanded = true;
+  // bool _isAdminsExpanded = true; // Removed
+  // bool _isEleviExpanded = true; // Removed
   late int _adminStatus;
   final TextEditingController _adminSearchController = TextEditingController();
   final TextEditingController _elevSearchController = TextEditingController();
-  String _adminSearchQuery = '';
-  String _elevSearchQuery = '';
+  // String _adminSearchQuery = ''; // Removed
+  // String _elevSearchQuery = ''; // Removed
+
+  // Report/Scan State
+  DateTime _startDate = DateTime.now().subtract(const Duration(days: 7));
+  DateTime _endDate = DateTime.now();
+  List<ScanLog>? _scans;
+  bool _isLoadingScans = false;
+  String? _scansError;
 
   @override
   void initState() {
@@ -71,18 +78,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       curve: Curves.elasticOut,
     );
     _fabController.forward();
-
-    _adminSearchController.addListener(() {
-      setState(() {
-        _adminSearchQuery = _adminSearchController.text.toLowerCase();
-      });
-    });
-
-    _elevSearchController.addListener(() {
-      setState(() {
-        _elevSearchQuery = _elevSearchController.text.toLowerCase();
-      });
-    });
   }
 
   @override
@@ -104,7 +99,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   void _refreshList() {
     setState(() {
       _adminsFuture = _fetchAdmins();
-      _eleviFuture = _fetchElevi();
+      _fetchElevi().then((_) {
+        if (mounted) setState(() {});
+      });
+      _fetchScans();
     });
   }
 
@@ -161,6 +159,474 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       }
       rethrow;
     }
+  }
+
+  Future<void> _fetchScans() async {
+    setState(() {
+      _isLoadingScans = true;
+      _scansError = null;
+    });
+
+    try {
+      final response = await _adminService.getScansByDate(
+        widget.token,
+        _startDate,
+        _endDate,
+      );
+      setState(() {
+        _scans = response.data;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _scansError = e.toString();
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingScans = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _selectDateRange(BuildContext context) async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+      initialDateRange: DateTimeRange(start: _startDate, end: _endDate),
+    );
+
+    if (picked != null) {
+      setState(() {
+        _startDate = picked.start;
+        _endDate = picked.end;
+      });
+      _fetchScans();
+    }
+  }
+
+  void _showProfessorsListModal() {
+    final l10n = AppLocalizations.of(context)!;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.9,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (_, controller) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFF2F2F7),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    Text(
+                      l10n.professors,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              // Search Bar for Professors
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: Container(
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.black.withOpacity(0.05)),
+                  ),
+                  child: TextField(
+                    controller: _adminSearchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search...',
+                      hintStyle: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[400],
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        size: 20,
+                        color: Colors.grey[400],
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: StatefulBuilder(
+                  builder: (context, setModalState) {
+                    // Need to listen to controller changes to update filtered list
+                    // Alternatively, rely on parent state if controllers update it.
+                    // Since _adminSearchController updates _adminSearchQuery in parent,
+                    // and we pass filteredAdmins.
+
+                    // Best approach: Use ValueListenableBuilder or just rely on parent rebuilds wont work easily in modal.
+                    // Actually, StatefullBuilder + listener on controller is best.
+
+                    return ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: _adminSearchController,
+                      builder: (context, value, child) {
+                        final query = value.text.toLowerCase();
+                        final filteredAdmins = _currentAdmins.where((admin) {
+                          return admin.name.toLowerCase().contains(query) ||
+                              admin.email.toLowerCase().contains(query);
+                        }).toList();
+
+                        return ListView.builder(
+                          controller: controller,
+                          itemCount: filteredAdmins.length,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 8,
+                          ),
+                          itemBuilder: (context, index) {
+                            final admin = filteredAdmins[index];
+                            final isFirst = index == 0;
+                            final isLast = index == filteredAdmins.length - 1;
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 1),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.vertical(
+                                  top: isFirst
+                                      ? const Radius.circular(20)
+                                      : Radius.zero,
+                                  bottom: isLast
+                                      ? const Radius.circular(20)
+                                      : Radius.zero,
+                                ),
+                              ),
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 8,
+                                ),
+                                leading: Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(
+                                      context,
+                                    ).primaryColor.withOpacity(0.1),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      admin.name.isNotEmpty
+                                          ? admin.name[0].toUpperCase()
+                                          : '?',
+                                      style: TextStyle(
+                                        color: Theme.of(context).primaryColor,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 18,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                title: Text(
+                                  admin.name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                subtitle: Text(admin.email),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: Icon(
+                                        Icons.lock_outline,
+                                        color: Colors.orange[400],
+                                        size: 20,
+                                      ),
+                                      onPressed: () {
+                                        _showChangePasswordDialog(admin);
+                                      },
+                                      tooltip: l10n.changePassword,
+                                    ),
+                                    IconButton(
+                                      icon: Icon(
+                                        Icons.edit_outlined,
+                                        color: Colors.blue[400],
+                                        size: 20,
+                                      ),
+                                      onPressed: () {
+                                        Navigator.pop(context);
+                                        _showProfessorDialog(professor: admin);
+                                      },
+                                    ),
+                                    IconButton(
+                                      icon: Icon(
+                                        Icons.delete_outline,
+                                        color: Colors.red[300],
+                                        size: 20,
+                                      ),
+                                      onPressed: () => _deleteProfessor(admin),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showStudentsListModal() {
+    final l10n = AppLocalizations.of(context)!;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.9,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (_, controller) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFF2F2F7),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    Text(
+                      l10n.students,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: Container(
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.black.withOpacity(0.05)),
+                  ),
+                  child: TextField(
+                    controller: _elevSearchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search...',
+                      hintStyle: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[400],
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        size: 20,
+                        color: Colors.grey[400],
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _elevSearchController,
+                  builder: (context, value, child) {
+                    final query = value.text.toLowerCase();
+                    final filteredElevi = _currentElevi.where((elev) {
+                      return elev.name.toLowerCase().contains(query) ||
+                          elev.email.toLowerCase().contains(query) ||
+                          elev.codMatricol.toLowerCase().contains(query);
+                    }).toList();
+
+                    return ListView.builder(
+                      controller: controller,
+                      itemCount: filteredElevi.length,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 8,
+                      ),
+                      itemBuilder: (context, index) {
+                        final elev = filteredElevi[index];
+                        final isFirst = index == 0;
+                        final isLast = index == filteredElevi.length - 1;
+                        final bool isActive = elev.activ == 1;
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.vertical(
+                              top: isFirst
+                                  ? const Radius.circular(20)
+                                  : Radius.zero,
+                              bottom: isLast
+                                  ? const Radius.circular(20)
+                                  : Radius.zero,
+                            ),
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 8,
+                            ),
+                            leading: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: isActive
+                                    ? Colors.green.withOpacity(0.1)
+                                    : Colors.grey.withOpacity(0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  elev.name.isNotEmpty
+                                      ? elev.name[0].toUpperCase()
+                                      : '?',
+                                  style: TextStyle(
+                                    color: isActive
+                                        ? Colors.green
+                                        : Colors.grey,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            title: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    elev.name,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                if (isActive)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      l10n.active,
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.green[700],
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            subtitle: Text(elev.email),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: Icon(
+                                    Icons.edit_outlined,
+                                    color: Colors.blue[400],
+                                    size: 20,
+                                  ),
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                    _showElevDialog(elev: elev);
+                                  },
+                                ),
+                                IconButton(
+                                  icon: Icon(
+                                    Icons.delete_outline,
+                                    color: Colors.red[300],
+                                    size: 20,
+                                  ),
+                                  onPressed: () => _deleteElev(elev),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _downloadCsv() {
@@ -351,7 +817,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                                                 await _adminService
                                                     .updateProfessor(
                                                       widget.token,
-                                                      professor!.id,
+                                                      professor.id,
                                                       nameController.text,
                                                       emailController.text,
                                                     );
@@ -1026,507 +1492,254 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   child: Center(child: CircularProgressIndicator()),
                 )
               else ...[
-                // Professors Section
+                // Charts Section
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildChartsSection(admins, _currentElevi),
-                        const SizedBox(height: 32),
-                        // Professors Header
-                        Row(
-                          children: [
-                            IconButton(
-                              icon: Icon(
-                                _isAdminsExpanded
-                                    ? Icons.keyboard_arrow_down_rounded
-                                    : Icons.keyboard_arrow_right_rounded,
-                                color: Colors.black.withOpacity(0.6),
-                              ),
-                              onPressed: () {
-                                setState(() {
-                                  _isAdminsExpanded = !_isAdminsExpanded;
-                                });
-                              },
-                            ),
-                            Text(
-                              l10n.professors,
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black.withOpacity(0.8),
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                            Spacer(),
-                            // Search Bar
-                            if (_isAdminsExpanded)
-                              Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                  ),
-                                  child: Container(
-                                    height: 40,
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(20),
-                                      border: Border.all(
-                                        color: Colors.black.withOpacity(0.05),
-                                      ),
-                                    ),
-                                    child: TextField(
-                                      controller: _adminSearchController,
-                                      decoration: InputDecoration(
-                                        hintText: 'Search...',
-                                        hintStyle: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey[400],
-                                        ),
-                                        prefixIcon: Icon(
-                                          Icons.search,
-                                          size: 20,
-                                          color: Colors.grey[400],
-                                        ),
-                                        border: InputBorder.none,
-                                        contentPadding:
-                                            const EdgeInsets.symmetric(
-                                              vertical: 4,
-                                            ),
-                                        isDense: true,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
+                    child: _buildChartsSection(admins, _currentElevi),
+                  ),
+                ),
 
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: Colors.black.withOpacity(0.05),
-                                ),
-                              ),
-                              child: Text(
-                                '${admins.length} ${l10n.total}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
+                // Reports Control Section
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 8,
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            l10n.scanHistory,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black.withOpacity(0.8),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                      ],
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withOpacity(0.1),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.calendar_month,
+                                  color: Colors.blue,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    l10n.dateRange,
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${DateFormat('MMM d').format(_startDate)} - ${DateFormat('MMM d').format(_endDate)}',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const Spacer(),
+                              ElevatedButton.icon(
+                                onPressed: () => _selectDateRange(context),
+                                icon: const Icon(Icons.edit_calendar, size: 16),
+                                label: const Text('Change'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.blue[50],
+                                  foregroundColor: Colors.blue[700],
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: _fetchScans,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue[600],
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: Text(l10n.searchLogs),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
 
-                if (_isAdminsExpanded)
+                // Scans List Section
+                if (_isLoadingScans)
+                  const SliverFillRemaining(
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (_scansError != null)
+                  SliverFillRemaining(
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.error_outline,
+                            size: 48,
+                            color: Colors.red,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Error: $_scansError',
+                            style: const TextStyle(color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else if (_scans == null || _scans!.isEmpty)
+                  SliverFillRemaining(
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.history,
+                            size: 48,
+                            color: Colors.grey[300],
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            l10n.noScansFound,
+                            style: TextStyle(color: Colors.grey[400]),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
                   SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    sliver: Builder(
-                      builder: (context) {
-                        final filteredAdmins = admins.where((admin) {
-                          return admin.name.toLowerCase().contains(
-                                _adminSearchQuery,
-                              ) ||
-                              admin.email.toLowerCase().contains(
-                                _adminSearchQuery,
-                              );
-                        }).toList();
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        final scan = _scans![index];
+                        final isFirst = index == 0;
+                        final isLast = index == _scans!.length - 1;
 
-                        return SliverList(
-                          delegate: SliverChildBuilderDelegate((
-                            context,
-                            index,
-                          ) {
-                            final admin = filteredAdmins[index];
-                            final isFirst = index == 0;
-                            final isLast = index == filteredAdmins.length - 1;
-
-                            return _AnimatedListItem(
-                              index: index,
-                              child: Container(
-                                margin: const EdgeInsets.only(
-                                  bottom: 1,
-                                ), // Separator line
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.vertical(
-                                    top: isFirst
-                                        ? const Radius.circular(20)
-                                        : Radius.zero,
-                                    bottom: isLast
-                                        ? const Radius.circular(20)
-                                        : Radius.zero,
-                                  ),
-                                ),
-                                child: ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 20,
-                                    vertical: 12,
-                                  ),
-                                  leading: Container(
-                                    width: 48,
-                                    height: 48,
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(
-                                        context,
-                                      ).primaryColor.withOpacity(0.1),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Center(
-                                      child: Text(
-                                        admin.name.isNotEmpty
-                                            ? admin.name[0].toUpperCase()
-                                            : '?',
-                                        style: TextStyle(
-                                          color: Theme.of(context).primaryColor,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 20,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  title: Text(
-                                    admin.name,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 16,
-                                      letterSpacing: -0.3,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    admin.email,
-                                    style: TextStyle(
-                                      color: Colors.grey[500],
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(
-                                        icon: Icon(
-                                          Icons.lock_outline,
-                                          color: Colors.orange[400],
-                                          size: 22,
-                                        ),
-                                        onPressed: () =>
-                                            _showChangePasswordDialog(admin),
-                                        tooltip: l10n.changePassword,
-                                      ),
-                                      IconButton(
-                                        icon: Icon(
-                                          Icons.edit_outlined,
-                                          color: Colors.blue[400],
-                                          size: 22,
-                                        ),
-                                        onPressed: () => _showProfessorDialog(
-                                          professor: admin,
-                                        ),
-                                      ),
-                                      IconButton(
-                                        icon: Icon(
-                                          Icons.delete_outline,
-                                          color: Colors.red[300],
-                                          size: 22,
-                                        ),
-                                        onPressed: () =>
-                                            _deleteProfessor(admin),
-                                      ),
-                                    ],
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.vertical(
+                              top: isFirst
+                                  ? const Radius.circular(20)
+                                  : Radius.zero,
+                              bottom: isLast
+                                  ? const Radius.circular(20)
+                                  : Radius.zero,
+                            ),
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 12,
+                            ),
+                            leading: Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withOpacity(0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  scan.name.isNotEmpty
+                                      ? scan.name[0].toUpperCase()
+                                      : '?',
+                                  style: TextStyle(
+                                    color: Colors.blue[700],
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
                                   ),
                                 ),
                               ),
-                            );
-                          }, childCount: filteredAdmins.length),
-                        );
-                      },
-                    ),
-                  ),
-
-                // Students Section
-                FutureBuilder<ElevListResponse>(
-                  future: _eleviFuture,
-                  builder: (context, snapshot) {
-                    final elevi = snapshot.data?.elevi ?? [];
-
-                    return SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 32, 20, 24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
+                            ),
+                            title: Text(
+                              scan.name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 16,
+                                letterSpacing: -0.3,
+                              ),
+                            ),
+                            subtitle: Text(
+                              'ID: ${scan.idElev}',
+                              style: TextStyle(
+                                color: Colors.grey[500],
+                                fontSize: 14,
+                              ),
+                            ),
+                            trailing: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
-                                IconButton(
-                                  icon: Icon(
-                                    _isEleviExpanded
-                                        ? Icons.keyboard_arrow_down_rounded
-                                        : Icons.keyboard_arrow_right_rounded,
-                                    color: Colors.black.withOpacity(0.6),
+                                Text(
+                                  DateFormat('HH:mm:ss').format(scan.scanTime),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
                                   ),
-                                  onPressed: () {
-                                    setState(() {
-                                      _isEleviExpanded = !_isEleviExpanded;
-                                    });
-                                  },
                                 ),
                                 Text(
-                                  l10n.students,
+                                  DateFormat(
+                                    'yyyy-MM-dd',
+                                  ).format(scan.scanTime),
                                   style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.black.withOpacity(0.8),
-                                    letterSpacing: -0.5,
-                                  ),
-                                ),
-                                Spacer(),
-                                // Search Bar
-                                if (_isEleviExpanded)
-                                  Expanded(
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                      ),
-                                      child: Container(
-                                        height: 40,
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(
-                                            20,
-                                          ),
-                                          border: Border.all(
-                                            color: Colors.black.withOpacity(
-                                              0.05,
-                                            ),
-                                          ),
-                                        ),
-                                        child: TextField(
-                                          controller: _elevSearchController,
-                                          decoration: InputDecoration(
-                                            hintText: 'Search...',
-                                            hintStyle: TextStyle(
-                                              fontSize: 14,
-                                              color: Colors.grey[400],
-                                            ),
-                                            prefixIcon: Icon(
-                                              Icons.search,
-                                              size: 20,
-                                              color: Colors.grey[400],
-                                            ),
-                                            border: InputBorder.none,
-                                            contentPadding:
-                                                const EdgeInsets.symmetric(
-                                                  vertical: 4,
-                                                ),
-                                            isDense: true,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(
-                                      color: Colors.black.withOpacity(0.05),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    '${elevi.length} ${l10n.total}',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.grey[600],
-                                    ),
+                                    color: Colors.grey[400],
+                                    fontSize: 12,
                                   ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 16),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                FutureBuilder<ElevListResponse>(
-                  future: _eleviFuture,
-                  builder: (context, snapshot) {
-                    final elevi = snapshot.data?.elevi ?? [];
+                          ),
+                        );
+                      }, childCount: _scans!.length),
+                    ),
+                  ),
 
-                    if (!_isEleviExpanded) {
-                      return const SliverToBoxAdapter(child: SizedBox.shrink());
-                    }
-
-                    final filteredElevi = elevi.where((elev) {
-                      final query = _elevSearchQuery;
-                      return elev.name.toLowerCase().contains(query) ||
-                          elev.email.toLowerCase().contains(query) ||
-                          elev.codMatricol.toLowerCase().contains(query);
-                    }).toList();
-
-                    if (filteredElevi.isEmpty) {
-                      return const SliverToBoxAdapter(child: SizedBox.shrink());
-                    }
-
-                    return SliverPadding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      sliver: SliverList(
-                        delegate: SliverChildBuilderDelegate((context, index) {
-                          final elev = filteredElevi[index];
-                          final isFirst = index == 0;
-                          final isLast = index == filteredElevi.length - 1;
-
-                          return _AnimatedListItem(
-                            index: index,
-                            child: Container(
-                              margin: const EdgeInsets.only(bottom: 1),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.vertical(
-                                  top: isFirst
-                                      ? const Radius.circular(20)
-                                      : Radius.zero,
-                                  bottom: isLast
-                                      ? const Radius.circular(20)
-                                      : Radius.zero,
-                                ),
-                              ),
-                              child: ListTile(
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 20,
-                                  vertical: 12,
-                                ),
-                                leading: Container(
-                                  width: 48,
-                                  height: 48,
-                                  decoration: BoxDecoration(
-                                    color: elev.activ == 1
-                                        ? Colors.green.withOpacity(0.1)
-                                        : Colors.grey.withOpacity(0.1),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      elev.name.isNotEmpty
-                                          ? elev.name[0].toUpperCase()
-                                          : '?',
-                                      style: TextStyle(
-                                        color: elev.activ == 1
-                                            ? Colors.green
-                                            : Colors.grey,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 20,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                title: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        elev.name,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 16,
-                                          letterSpacing: -0.3,
-                                        ),
-                                      ),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: elev.activ == 1
-                                            ? Colors.green.withOpacity(0.1)
-                                            : Colors.grey.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Text(
-                                        elev.activ == 1
-                                            ? l10n.active
-                                            : l10n.inactive,
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w600,
-                                          color: elev.activ == 1
-                                              ? Colors.green
-                                              : Colors.grey,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      elev.email,
-                                      style: TextStyle(
-                                        color: Colors.grey[500],
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                    Text(
-                                      '${l10n.codMatricol}: ${elev.codMatricol}',
-                                      style: TextStyle(
-                                        color: Colors.grey[400],
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: Icon(
-                                        Icons.edit_outlined,
-                                        color: Colors.blue[400],
-                                        size: 22,
-                                      ),
-                                      onPressed: () =>
-                                          _showElevDialog(elev: elev),
-                                    ),
-                                    IconButton(
-                                      icon: Icon(
-                                        Icons.delete_outline,
-                                        color: Colors.red[300],
-                                        size: 22,
-                                      ),
-                                      onPressed: () => _deleteElev(elev),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        }, childCount: filteredElevi.length),
-                      ),
-                    );
-                  },
-                ),
                 const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
               ],
             ],
@@ -1586,7 +1799,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                                   child: InkWell(
                                     onTap: () {
                                       Navigator.pop(context);
-                                      _showProfessorDialog();
+                                      _showProfessorsListModal();
                                     },
                                     borderRadius: const BorderRadius.vertical(
                                       top: Radius.circular(12),
@@ -1744,105 +1957,113 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 children: [
                   // Professors stat
                   Expanded(
-                    child: Container(
-                      margin: const EdgeInsets.only(right: 8),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.blue.shade50,
-                            Colors.blue.shade100.withOpacity(0.5),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+                    child: InkWell(
+                      onTap: _showProfessorsListModal,
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.blue.shade50,
+                              Colors.blue.shade100.withOpacity(0.5),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.withOpacity(0.1),
-                              shape: BoxShape.circle,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withOpacity(0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.person,
+                                color: Colors.blue[600],
+                                size: 24,
+                              ),
                             ),
-                            child: Icon(
-                              Icons.person,
-                              color: Colors.blue[600],
-                              size: 24,
+                            const SizedBox(height: 8),
+                            Text(
+                              '$totalProfessors',
+                              style: TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue[700],
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '$totalProfessors',
-                            style: TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue[700],
+                            Text(
+                              l10n.professors,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.blue[600],
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
-                          ),
-                          Text(
-                            l10n.professors,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.blue[600],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
                   // Students stat
                   Expanded(
-                    child: Container(
-                      margin: const EdgeInsets.only(left: 8),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.green.shade50,
-                            Colors.green.shade100.withOpacity(0.5),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+                    child: InkWell(
+                      onTap: _showStudentsListModal,
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        margin: const EdgeInsets.only(left: 8),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.green.shade50,
+                              Colors.green.shade100.withOpacity(0.5),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.green.withOpacity(0.1),
-                              shape: BoxShape.circle,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.green.withOpacity(0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.school,
+                                color: Colors.green[600],
+                                size: 24,
+                              ),
                             ),
-                            child: Icon(
-                              Icons.school,
-                              color: Colors.green[600],
-                              size: 24,
+                            const SizedBox(height: 8),
+                            Text(
+                              '$totalStudents',
+                              style: TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green[700],
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '$totalStudents',
-                            style: TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green[700],
+                            Text(
+                              l10n.students,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.green[600],
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
-                          ),
-                          Text(
-                            l10n.students,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.green[600],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
