@@ -60,6 +60,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   List<ScanLog>? _scans;
   bool _isLoadingScans = false;
   String? _scansError;
+  List<FlSpot> _weeklyActivitySpots = [];
+  bool _isLoadingActivity = false;
 
   @override
   void initState() {
@@ -109,6 +111,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         if (mounted) setState(() {});
       });
       _fetchScans();
+      _fetchWeeklyActivity();
     });
   }
 
@@ -212,6 +215,66 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       if (mounted) {
         setState(() {
           _isLoadingScans = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _fetchWeeklyActivity() async {
+    setState(() {
+      _isLoadingActivity = true;
+    });
+
+    try {
+      final now = DateTime.now();
+      // Find Monday of the current week
+      final monday = now.subtract(Duration(days: now.weekday - 1));
+      final startDate = DateTime(monday.year, monday.month, monday.day);
+      // End date is Saturday (exclusive of Friday scan times potentially if not careful,
+      // but scans_by_date logic usually takes start and end.
+      // Let's set end to Saturday 00:00:00 to cover full Friday.
+      final endDate = startDate.add(const Duration(days: 5));
+
+      final response = await _adminService.getScansByDate(
+        widget.token,
+        startDate,
+        endDate,
+      );
+
+      final scans = response.data;
+      final Map<int, Set<int>> dailyStudents = {
+        0: {}, // Mon
+        1: {}, // Tue
+        2: {}, // Wed
+        3: {}, // Thu
+        4: {}, // Fri
+      };
+
+      for (var scan in scans) {
+        // Calculate day index (0=Mon, 4=Fri)
+        // scan.scanTime.weekday: Mon=1, Sun=7
+        final dayIndex = scan.scanTime.weekday - 1;
+        if (dayIndex >= 0 && dayIndex <= 4) {
+          dailyStudents[dayIndex]?.add(scan.idElev);
+        }
+      }
+
+      final List<FlSpot> spots = [];
+      for (int i = 0; i < 5; i++) {
+        spots.add(
+          FlSpot(i.toDouble(), dailyStudents[i]?.length.toDouble() ?? 0),
+        );
+      }
+
+      setState(() {
+        _weeklyActivitySpots = spots;
+      });
+    } catch (e) {
+      print('Error fetching weekly activity: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingActivity = false;
         });
       }
     }
@@ -1491,6 +1554,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   ),
                 ),
 
+                // Weekly Activity Chart
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                    child: _buildActivityChart(),
+                  ),
+                ),
+
                 // Reports Control & History Section
                 SliverToBoxAdapter(
                   child: Padding(
@@ -2513,6 +2584,139 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildActivityChart() {
+    final l10n = AppLocalizations.of(context)!;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      height: 300,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Weekly Activity',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Unique Students (Mon-Fri)',
+            style: TextStyle(color: Colors.grey[500], fontSize: 12),
+          ),
+          const SizedBox(height: 24),
+          Expanded(
+            child: _isLoadingActivity
+                ? const Center(child: CircularProgressIndicator())
+                : LineChart(
+                    LineChartData(
+                      gridData: FlGridData(show: false),
+                      titlesData: FlTitlesData(
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 30,
+                            interval: 1,
+                            getTitlesWidget: (value, meta) {
+                              const style = TextStyle(
+                                color: Colors.grey,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              );
+                              String text;
+                              switch (value.toInt()) {
+                                case 0:
+                                  text = 'Mon';
+                                  break;
+                                case 1:
+                                  text = 'Tue';
+                                  break;
+                                case 2:
+                                  text = 'Wed';
+                                  break;
+                                case 3:
+                                  text = 'Thu';
+                                  break;
+                                case 4:
+                                  text = 'Fri';
+                                  break;
+                                default:
+                                  return Container();
+                              }
+                              return SideTitleWidget(
+                                axisSide: meta.axisSide,
+                                space: 10,
+                                child: Text(text, style: style),
+                              );
+                            },
+                          ),
+                        ),
+                        leftTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            interval: 5, // Adjust interval based on max
+                            getTitlesWidget: (value, meta) {
+                              if (value % 1 != 0)
+                                return Container(); // Only integers
+                              return Text(
+                                value.toInt().toString(),
+                                style: const TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 12,
+                                ),
+                              );
+                            },
+                            reservedSize: 28,
+                          ),
+                        ),
+                        topTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                        rightTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                      ),
+                      borderData: FlBorderData(show: false),
+                      minX: 0,
+                      maxX: 4,
+                      minY: 0,
+                      lineBarsData: [
+                        LineChartBarData(
+                          spots: _weeklyActivitySpots.isEmpty
+                              ? [const FlSpot(0, 0)]
+                              : _weeklyActivitySpots,
+                          isCurved: true,
+                          color: Colors.blueAccent,
+                          barWidth: 3,
+                          isStrokeCapRound: true,
+                          dotData: const FlDotData(show: true),
+                          belowBarData: BarAreaData(
+                            show: true,
+                            color: Colors.blueAccent.withOpacity(0.1),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
+        ],
       ),
     );
   }
