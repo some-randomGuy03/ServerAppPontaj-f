@@ -529,6 +529,42 @@ abstract class AppLocalizations {
   /// In ro, this message translates to:
   /// **'Niciun elev înscris'**
   String get noEnrolledStudents;
+
+  /// No description provided for @scansToday.
+  ///
+  /// In ro, this message translates to:
+  /// **'Scanări Azi'**
+  String get scansToday;
+
+  /// No description provided for @scansWeek.
+  ///
+  /// In ro, this message translates to:
+  /// **'Scanări Săptămână'**
+  String get scansWeek;
+
+  /// No description provided for @scansTwoWeeks.
+  ///
+  /// In ro, this message translates to:
+  /// **'Scanări 2 Săpt.'**
+  String get scansTwoWeeks;
+
+  /// No description provided for @scansMonth.
+  ///
+  /// In ro, this message translates to:
+  /// **'Scanări Lună'**
+  String get scansMonth;
+
+  /// No description provided for @studentsScanned.
+  ///
+  /// In ro, this message translates to:
+  /// **'elevi scanați'**
+  String get studentsScanned;
+
+  /// No description provided for @enrolled.
+  ///
+  /// In ro, this message translates to:
+  /// **'Înscriși'**
+  String get enrolled;
 }
 
 class _AppLocalizationsDelegate

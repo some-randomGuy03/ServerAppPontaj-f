@@ -86,5 +86,11 @@
     "dateRange": "Date Range",
     "searchLogs": "Search Logs",
     "noScansFound": "No scans found for this period",
-    "noEnrolledStudents": "No enrolled students"
+    "noEnrolledStudents": "No enrolled students",
+    "scansToday": "Scans Today",
+    "scansWeek": "Scans Week",
+    "scansTwoWeeks": "Scans 2 Weeks",
+    "scansMonth": "Scans Month",
+    "studentsScanned": "students scanned",
+    "enrolled": "Enrolled"
 }

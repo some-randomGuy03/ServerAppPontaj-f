@@ -45,13 +45,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   List<Elev> _allElevi = []; // All students
 
   // Search and Collapse state
-  // bool _isAdminsExpanded = true; // Removed
-  bool _isEleviExpanded = true;
   late int _adminStatus;
   final TextEditingController _adminSearchController = TextEditingController();
   final TextEditingController _elevSearchController = TextEditingController();
-  // String _adminSearchQuery = ''; // Removed
-  String _elevSearchQuery = '';
 
   // Report/Scan State
   DateTime _selectedMonth = DateTime.now();
@@ -62,6 +58,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   String? _scansError;
   List<FlSpot> _weeklyActivitySpots = [];
   bool _isLoadingActivity = false;
+
+  // Scan Statistics State
+  int _scansToday = 0;
+  int _scansWeek = 0;
+  int _scansTwoWeeks = 0;
+  int _scansMonth = 0;
+  bool _isLoadingStats = false;
 
   @override
   void initState() {
@@ -80,11 +83,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       parent: _fabController,
       curve: Curves.elasticOut,
     );
-    _elevSearchController.addListener(() {
-      setState(() {
-        _elevSearchQuery = _elevSearchController.text.toLowerCase();
-      });
-    });
     _fabController.forward();
   }
 
@@ -112,6 +110,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       });
       _fetchScans();
       _fetchWeeklyActivity();
+      _fetchScanStatistics();
     });
   }
 
@@ -275,6 +274,46 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       if (mounted) {
         setState(() {
           _isLoadingActivity = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _fetchScanStatistics() async {
+    setState(() {
+      _isLoadingStats = true;
+    });
+
+    try {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final tomorrow = today.add(const Duration(days: 1));
+      final weekAgo = today.subtract(const Duration(days: 7));
+      final twoWeeksAgo = today.subtract(const Duration(days: 14));
+      final monthAgo = today.subtract(const Duration(days: 30));
+
+      // Fetch all periods in parallel
+      final results = await Future.wait([
+        _adminService.getScansByDate(widget.token, today, tomorrow),
+        _adminService.getScansByDate(widget.token, weekAgo, tomorrow),
+        _adminService.getScansByDate(widget.token, twoWeeksAgo, tomorrow),
+        _adminService.getScansByDate(widget.token, monthAgo, tomorrow),
+      ]);
+
+      if (mounted) {
+        setState(() {
+          _scansToday = results[0].data.length;
+          _scansWeek = results[1].data.length;
+          _scansTwoWeeks = results[2].data.length;
+          _scansMonth = results[3].data.length;
+        });
+      }
+    } catch (e) {
+      print('Error fetching scan statistics: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingStats = false;
         });
       }
     }
@@ -1593,13 +1632,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                             },
                             child: Row(
                               children: [
-                                Text(
-                                  l10n.scanHistory,
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.black.withOpacity(0.8),
-                                  ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      l10n.scanHistory,
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black.withOpacity(0.8),
+                                      ),
+                                    ),
+                                    if (_scans != null && _scans!.isNotEmpty)
+                                      Text(
+                                        '${_scans!.map((s) => s.idElev).toSet().length} ${l10n.studentsScanned}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                  ],
                                 ),
                                 const Spacer(),
                                 Icon(
@@ -1937,268 +1989,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                     ),
                   ),
 
-                // Enrolled Students Section
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 32, 20, 24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        InkWell(
-                          onTap: () {
-                            setState(() {
-                              _isEleviExpanded = !_isEleviExpanded;
-                            });
-                          },
-                          child: Row(
-                            children: [
-                              Icon(
-                                _isEleviExpanded
-                                    ? Icons.keyboard_arrow_down_rounded
-                                    : Icons.keyboard_arrow_right_rounded,
-                                color: Colors.black.withOpacity(0.6),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                l10n.enrolledStudents,
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black.withOpacity(0.8),
-                                  letterSpacing: -0.5,
-                                ),
-                              ),
-                              const Spacer(),
-                              // Search Bar
-                              if (_isEleviExpanded)
-                                Expanded(
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                    ),
-                                    child: Container(
-                                      height: 40,
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(20),
-                                        border: Border.all(
-                                          color: Colors.black.withOpacity(0.05),
-                                        ),
-                                      ),
-                                      child: TextField(
-                                        controller: _elevSearchController,
-                                        decoration: InputDecoration(
-                                          hintText: 'Search...',
-                                          hintStyle: TextStyle(
-                                            fontSize: 14,
-                                            color: Colors.grey[400],
-                                          ),
-                                          prefixIcon: Icon(
-                                            Icons.search,
-                                            size: 20,
-                                            color: Colors.grey[400],
-                                          ),
-                                          border: InputBorder.none,
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                                vertical: 4,
-                                              ),
-                                          isDense: true,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                    color: Colors.black.withOpacity(0.05),
-                                  ),
-                                ),
-                                child: Text(
-                                  '${_currentElevi.length} ${l10n.total}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-                    ),
-                  ),
-                ),
-
-                if (_isEleviExpanded)
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    sliver: Builder(
-                      builder: (context) {
-                        final filteredElevi = _currentElevi.where((elev) {
-                          final query = _elevSearchQuery;
-                          return elev.name.toLowerCase().contains(query) ||
-                              elev.email.toLowerCase().contains(query) ||
-                              elev.codMatricol.toLowerCase().contains(query);
-                        }).toList();
-
-                        if (filteredElevi.isEmpty) {
-                          return const SliverToBoxAdapter(
-                            child: SizedBox.shrink(),
-                          );
-                        }
-
-                        return SliverList(
-                          delegate: SliverChildBuilderDelegate((
-                            context,
-                            index,
-                          ) {
-                            final elev = filteredElevi[index];
-                            final isFirst = index == 0;
-                            final isLast = index == filteredElevi.length - 1;
-
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 1),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.vertical(
-                                  top: isFirst
-                                      ? const Radius.circular(20)
-                                      : Radius.zero,
-                                  bottom: isLast
-                                      ? const Radius.circular(20)
-                                      : Radius.zero,
-                                ),
-                              ),
-                              child: ListTile(
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 20,
-                                  vertical: 12,
-                                ),
-                                leading: Container(
-                                  width: 48,
-                                  height: 48,
-                                  decoration: BoxDecoration(
-                                    color: elev.activ == 1
-                                        ? Colors.green.withOpacity(0.1)
-                                        : Colors.grey.withOpacity(0.1),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      elev.name.isNotEmpty
-                                          ? elev.name[0].toUpperCase()
-                                          : '?',
-                                      style: TextStyle(
-                                        color: elev.activ == 1
-                                            ? Colors.green
-                                            : Colors.grey,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 20,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                title: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        elev.name,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 16,
-                                          letterSpacing: -0.3,
-                                        ),
-                                      ),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: elev.activ == 1
-                                            ? Colors.green.withOpacity(0.1)
-                                            : Colors.grey.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Text(
-                                        elev.activ == 1
-                                            ? l10n.active
-                                            : l10n.inactive,
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w600,
-                                          color: elev.activ == 1
-                                              ? Colors.green
-                                              : Colors.grey,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      elev.email,
-                                      style: TextStyle(
-                                        color: Colors.grey[500],
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                    Text(
-                                      '${l10n.codMatricol}: ${elev.codMatricol}',
-                                      style: TextStyle(
-                                        color: Colors.grey[400],
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: Icon(
-                                        Icons.edit_outlined,
-                                        color: Colors.blue[400],
-                                        size: 22,
-                                      ),
-                                      onPressed: () {
-                                        _showElevDialog(elev: elev);
-                                      },
-                                    ),
-                                    IconButton(
-                                      icon: Icon(
-                                        Icons.delete_outline,
-                                        color: Colors.red[300],
-                                        size: 22,
-                                      ),
-                                      onPressed: () {
-                                        _deleteElev(elev);
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          }, childCount: filteredElevi.length),
-                        );
-                      },
-                    ),
-                  ),
-
                 const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
               ],
             ],
@@ -2389,6 +2179,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
     final int totalProfessors = admins.length;
     final int totalStudents = elevi.length;
+    final int totalEnrolled = _currentElevi.length;
     final int total = totalProfessors + totalStudents;
 
     // Calculate percentages for pie chart
@@ -2401,17 +2192,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
     return Center(
       child: Container(
-        constraints: const BoxConstraints(maxWidth: 1000),
+        constraints: const BoxConstraints(maxWidth: 1200),
         height: 220,
         child: ListView(
           scrollDirection: Axis.horizontal,
           physics: const BouncingScrollPhysics(),
           shrinkWrap: true,
           children: [
-            // Stats Overview Card
+            // Stats Overview Card (Professors, Students, Enrolled)
             _buildChartCard(
               title: l10n.total,
-              width: 320,
+              width: 440,
               child: Row(
                 children: [
                   // Professors stat
@@ -2420,8 +2211,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                       onTap: _showProfessorsListModal,
                       borderRadius: BorderRadius.circular(16),
                       child: Container(
-                        margin: const EdgeInsets.only(right: 8),
-                        padding: const EdgeInsets.all(16),
+                        margin: const EdgeInsets.only(right: 4),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
@@ -2437,7 +2228,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Container(
-                              padding: const EdgeInsets.all(8),
+                              padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(
                                 color: Colors.blue.withOpacity(0.1),
                                 shape: BoxShape.circle,
@@ -2445,14 +2236,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                               child: Icon(
                                 Icons.person,
                                 color: Colors.blue[600],
-                                size: 24,
+                                size: 20,
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 6),
                             Text(
                               '$totalProfessors',
                               style: TextStyle(
-                                fontSize: 28,
+                                fontSize: 24,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.blue[700],
                               ),
@@ -2460,7 +2251,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                             Text(
                               l10n.professors,
                               style: TextStyle(
-                                fontSize: 12,
+                                fontSize: 10,
                                 color: Colors.blue[600],
                                 fontWeight: FontWeight.w500,
                               ),
@@ -2476,8 +2267,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                       onTap: _showStudentsListModal,
                       borderRadius: BorderRadius.circular(16),
                       child: Container(
-                        margin: const EdgeInsets.only(left: 8),
-                        padding: const EdgeInsets.all(16),
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
@@ -2493,7 +2284,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Container(
-                              padding: const EdgeInsets.all(8),
+                              padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(
                                 color: Colors.green.withOpacity(0.1),
                                 shape: BoxShape.circle,
@@ -2501,14 +2292,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                               child: Icon(
                                 Icons.school,
                                 color: Colors.green[600],
-                                size: 24,
+                                size: 20,
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 6),
                             Text(
                               '$totalStudents',
                               style: TextStyle(
-                                fontSize: 28,
+                                fontSize: 24,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.green[700],
                               ),
@@ -2516,13 +2307,287 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                             Text(
                               l10n.students,
                               style: TextStyle(
-                                fontSize: 12,
+                                fontSize: 10,
                                 color: Colors.green[600],
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
                           ],
                         ),
+                      ),
+                    ),
+                  ),
+                  // Enrolled Students stat
+                  Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.only(left: 4),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.purple.shade50,
+                            Colors.purple.shade100.withOpacity(0.5),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.purple.withOpacity(0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.how_to_reg,
+                              color: Colors.purple[600],
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '$totalEnrolled',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.purple[700],
+                            ),
+                          ),
+                          Text(
+                            l10n.enrolled,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.purple[600],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 24),
+            // Scan Statistics Card
+            _buildChartCard(
+              title: l10n.scanHistory,
+              width: 520,
+              child: Row(
+                children: [
+                  // Scans Today - Blue
+                  Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.only(right: 4),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.blue.shade50,
+                            Colors.blue.shade100.withOpacity(0.5),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.today,
+                              color: Colors.blue[600],
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _isLoadingStats ? '...' : '$_scansToday',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue[700],
+                            ),
+                          ),
+                          Text(
+                            l10n.scansToday,
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: Colors.blue[600],
+                              fontWeight: FontWeight.w500,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Scans Week - Amber
+                  Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.amber.shade50,
+                            Colors.amber.shade100.withOpacity(0.5),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.withOpacity(0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.date_range,
+                              color: Colors.amber[700],
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _isLoadingStats ? '...' : '$_scansWeek',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.amber[800],
+                            ),
+                          ),
+                          Text(
+                            l10n.scansWeek,
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: Colors.amber[700],
+                              fontWeight: FontWeight.w500,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Scans 2 Weeks - Orange
+                  Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.orange.shade50,
+                            Colors.orange.shade100.withOpacity(0.5),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withOpacity(0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.calendar_view_week,
+                              color: Colors.orange[700],
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _isLoadingStats ? '...' : '$_scansTwoWeeks',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange[800],
+                            ),
+                          ),
+                          Text(
+                            l10n.scansTwoWeeks,
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: Colors.orange[700],
+                              fontWeight: FontWeight.w500,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Scans Month - Red
+                  Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.only(left: 4),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.red.shade50,
+                            Colors.red.shade100.withOpacity(0.5),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withOpacity(0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.calendar_month,
+                              color: Colors.red[600],
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _isLoadingStats ? '...' : '$_scansMonth',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.red[700],
+                            ),
+                          ),
+                          Text(
+                            l10n.scansMonth,
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: Colors.red[600],
+                              fontWeight: FontWeight.w500,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
                       ),
                     ),
                   ),

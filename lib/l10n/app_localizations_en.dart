@@ -228,4 +228,22 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get noEnrolledStudents => 'No enrolled students';
+
+  @override
+  String get scansToday => 'Scans Today';
+
+  @override
+  String get scansWeek => 'Scans Week';
+
+  @override
+  String get scansTwoWeeks => 'Scans 2 Weeks';
+
+  @override
+  String get scansMonth => 'Scans Month';
+
+  @override
+  String get studentsScanned => 'students scanned';
+
+  @override
+  String get enrolled => 'Enrolled';
 }

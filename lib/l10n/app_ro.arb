@@ -89,5 +89,11 @@
     "dateRange": "Interval Dată",
     "searchLogs": "Caută Jurnale",
     "noScansFound": "Nu s-au găsit scanări pentru această perioadă",
-    "noEnrolledStudents": "Niciun elev înscris"
+    "noEnrolledStudents": "Niciun elev înscris",
+    "scansToday": "Scanări Azi",
+    "scansWeek": "Scanări Săptămână",
+    "scansTwoWeeks": "Scanări 2 Săpt.",
+    "scansMonth": "Scanări Lună",
+    "studentsScanned": "elevi scanați",
+    "enrolled": "Înscriși"
 }

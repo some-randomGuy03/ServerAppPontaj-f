@@ -231,4 +231,22 @@ class AppLocalizationsRo extends AppLocalizations {
 
   @override
   String get noEnrolledStudents => 'Niciun elev înscris';
+
+  @override
+  String get scansToday => 'Scanări Azi';
+
+  @override
+  String get scansWeek => 'Scanări Săptămână';
+
+  @override
+  String get scansTwoWeeks => 'Scanări 2 Săpt.';
+
+  @override
+  String get scansMonth => 'Scanări Lună';
+
+  @override
+  String get studentsScanned => 'elevi scanați';
+
+  @override
+  String get enrolled => 'Înscriși';
 }
