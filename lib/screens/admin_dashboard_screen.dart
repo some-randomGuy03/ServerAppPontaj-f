@@ -2407,18 +2407,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       child: Container(
         constraints: const BoxConstraints(maxWidth: 1400),
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: IntrinsicHeight(
-          child: Wrap(
-            spacing: 24,
-            runSpacing: 24,
-            alignment: WrapAlignment.center,
-            children: [
-              // Stats Overview Card (Professors, Students, Enrolled)
-              ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 300, maxWidth: 500),
-                child: _buildChartCard(
-                  title: l10n.total,
-                  width: 440,
+        child: Wrap(
+          spacing: 24,
+          runSpacing: 24,
+          alignment: WrapAlignment.center,
+          children: [
+            // Stats Overview Card (Professors, Students, Enrolled)
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 300, maxWidth: 500),
+              child: _buildChartCard(
+                title: l10n.total,
+                width: 440,
+                child: SizedBox(
+                  height: 120,
                   child: Row(
                     children: [
                       // Professors stat
@@ -2593,12 +2594,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   ),
                 ),
               ),
-              // Scan Statistics Card
-              ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 300, maxWidth: 600),
-                child: _buildChartCard(
-                  title: l10n.scanHistory,
-                  width: 520,
+            ),
+            // Scan Statistics Card
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 300, maxWidth: 600),
+              child: _buildChartCard(
+                title: l10n.scanHistory,
+                width: 520,
+                child: SizedBox(
+                  height: 120,
                   child: Row(
                     children: [
                       // Scans Today - Blue
@@ -2817,12 +2821,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   ),
                 ),
               ),
-              // Distribution Pie Chart
-              ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 200, maxWidth: 300),
-                child: _buildChartCard(
-                  title: l10n.systemStatus,
-                  width: 280,
+            ),
+            // Distribution Pie Chart
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 200, maxWidth: 300),
+              child: _buildChartCard(
+                title: l10n.systemStatus,
+                width: 280,
+                child: SizedBox(
+                  height: 120,
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
@@ -2872,8 +2879,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -3032,6 +3039,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         ],
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
@@ -3043,7 +3051,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
             ),
           ),
           const SizedBox(height: 16),
-          Expanded(child: child),
+          child,
         ],
       ),
     );
