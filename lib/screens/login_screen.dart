@@ -146,16 +146,13 @@ class _LoginScreenState extends State<LoginScreen>
                   flex: 4,
                   child: Container(
                     decoration: BoxDecoration(
-                      color: Theme.of(context).primaryColor,
-                      image: DecorationImage(
-                        image: const NetworkImage(
-                          'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?q=80&w=2070&auto=format&fit=crop',
-                        ),
-                        fit: BoxFit.cover,
-                        colorFilter: ColorFilter.mode(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Theme.of(context).primaryColor,
                           Theme.of(context).primaryColor.withOpacity(0.8),
-                          BlendMode.darken,
-                        ),
+                        ],
                       ),
                     ),
                     child: Center(
