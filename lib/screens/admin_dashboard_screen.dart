@@ -1951,9 +1951,34 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                     padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
                     sliver: Builder(
                       builder: (context) {
-                        // Group scans by student ID
+                        // Filter scans by time interval and search query
+                        final filteredScans = _scans!.where((scan) {
+                          // Time interval filter
+                          final scanHour = scan.scanTime.hour;
+                          final scanMinute = scan.scanTime.minute;
+                          final scanTimeInMinutes = scanHour * 60 + scanMinute;
+                          final startTimeInMinutes =
+                              _startTime.hour * 60 + _startTime.minute;
+                          final endTimeInMinutes =
+                              _endTime.hour * 60 + _endTime.minute;
+
+                          final withinTimeRange =
+                              scanTimeInMinutes >= startTimeInMinutes &&
+                              scanTimeInMinutes <= endTimeInMinutes;
+
+                          // Student search filter
+                          final searchQuery = _scanSearchController.text
+                              .toLowerCase();
+                          final matchesSearch =
+                              searchQuery.isEmpty ||
+                              scan.name.toLowerCase().contains(searchQuery);
+
+                          return withinTimeRange && matchesSearch;
+                        }).toList();
+
+                        // Group filtered scans by student ID
                         final Map<String, List<ScanLog>> groupedScans = {};
-                        for (var scan in _scans!) {
+                        for (var scan in filteredScans) {
                           final key = '${scan.name}_${scan.idElev}';
                           if (!groupedScans.containsKey(key)) {
                             groupedScans[key] = [];
@@ -3245,6 +3270,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           ),
           child: TextField(
             controller: _scanSearchController,
+            onChanged: (value) {
+              setState(() {}); // Trigger rebuild for filtering
+            },
             decoration: InputDecoration(
               hintText: 'Search by student name...',
               hintStyle: TextStyle(fontSize: 14, color: Colors.grey[400]),
@@ -3253,7 +3281,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
               contentPadding: const EdgeInsets.symmetric(vertical: 12),
               isDense: true,
             ),
-            onChanged: (_) => setState(() {}),
           ),
         ),
       ],
