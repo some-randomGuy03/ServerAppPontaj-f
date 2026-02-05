@@ -98,8 +98,14 @@ class LanguageSwitcher extends StatelessWidget {
       ),
       child: InkWell(
         onTap: () {
-          provider.changeLanguage(locale);
+          // Close dialog first to prevent context issues
           Navigator.pop(context);
+
+          // Change language after dialog is closed
+          // Use a small delay to ensure dialog close animation completes
+          Future.delayed(const Duration(milliseconds: 100), () {
+            provider.changeLanguage(locale);
+          });
         },
         borderRadius: BorderRadius.vertical(
           top: isFirst ? const Radius.circular(12) : Radius.zero,

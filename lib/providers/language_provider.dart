@@ -23,9 +23,19 @@ class LanguageProvider with ChangeNotifier {
     if (_currentLocale == newLocale) return;
 
     _currentLocale = newLocale;
-    notifyListeners();
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('language_code', newLocale.languageCode);
+    // Save to preferences first, then notify listeners
+    // This prevents rapid successive calls from causing issues
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('language_code', newLocale.languageCode);
+
+      // Only notify listeners after successful save
+      notifyListeners();
+    } catch (e) {
+      // If save fails, revert the locale change
+      print('Error saving language preference: $e');
+      // Don't notify listeners if save failed
+    }
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
+import 'package:table_calendar/table_calendar.dart';
 import 'package:pontaj_admin/l10n/app_localizations.dart';
 import '../models/professor.dart';
 import '../models/elev.dart';
@@ -49,15 +50,29 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   final TextEditingController _adminSearchController = TextEditingController();
   final TextEditingController _elevSearchController = TextEditingController();
 
-  // Report/Scan State
+  // Report/Scan State - Calendar Booking Interface
+  DateTime _focusedDay = DateTime.now();
+  DateTime? _rangeStart;
+  DateTime? _rangeEnd;
+  RangeSelectionMode _rangeSelectionMode = RangeSelectionMode.toggledOn;
+
+  // Time interval filtering
+  TimeOfDay _startTime = const TimeOfDay(hour: 0, minute: 0);
+  TimeOfDay _endTime = const TimeOfDay(hour: 23, minute: 59);
+
+  // Legacy month/day state (for backward compatibility during transition)
   DateTime _selectedMonth = DateTime.now();
   DateTime? _selectedDay;
+
   bool _isHistoryExpanded = true;
   List<ScanLog>? _scans;
   bool _isLoadingScans = false;
   String? _scansError;
   List<FlSpot> _weeklyActivitySpots = [];
   bool _isLoadingActivity = false;
+
+  // Student search in scans
+  final TextEditingController _scanSearchController = TextEditingController();
 
   // Scan Statistics State
   int _scansToday = 0;
@@ -92,6 +107,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     _fabController.dispose();
     _adminSearchController.dispose();
     _elevSearchController.dispose();
+    _scanSearchController.dispose();
     super.dispose();
   }
 
@@ -1877,142 +1893,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                             ),
                           ),
                           if (_isHistoryExpanded) ...[
-                            const SizedBox(height: 16),
-                            // Year/Month Selector (12 dots)
-                            SizedBox(
-                              height: 60,
-                              child: ListView.builder(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: 12,
-                                itemBuilder: (context, index) {
-                                  final monthDate = DateTime(
-                                    DateTime.now().year,
-                                    index + 1,
-                                  );
-                                  final isSelected =
-                                      _selectedMonth.month == index + 1 &&
-                                      _selectedMonth.year == monthDate.year;
-
-                                  return GestureDetector(
-                                    onTap: () {
-                                      setState(() {
-                                        _selectedMonth = monthDate;
-                                        _selectedDay =
-                                            null; // Reset day selection
-                                      });
-                                      _fetchScans();
-                                    },
-                                    child: Container(
-                                      width: 40,
-                                      margin: const EdgeInsets.symmetric(
-                                        horizontal: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: isSelected
-                                            ? Colors.blue.withOpacity(0.1)
-                                            : Colors.transparent,
-                                        shape: BoxShape.circle,
-                                        border: isSelected
-                                            ? Border.all(
-                                                color: Colors.blue,
-                                                width: 2,
-                                              )
-                                            : null,
-                                      ),
-                                      child: Center(
-                                        child: Text(
-                                          DateFormat('MMM').format(monthDate),
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: isSelected
-                                                ? FontWeight.bold
-                                                : FontWeight.normal,
-                                            color: isSelected
-                                                ? Colors.blue
-                                                : Colors.grey,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            // Day Selector
-                            SizedBox(
-                              height: 60,
-                              child: ListView.builder(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: DateTime(
-                                  _selectedMonth.year,
-                                  _selectedMonth.month + 1,
-                                  0,
-                                ).day, // Days in month
-                                itemBuilder: (context, index) {
-                                  final day = index + 1;
-                                  final dayDate = DateTime(
-                                    _selectedMonth.year,
-                                    _selectedMonth.month,
-                                    day,
-                                  );
-                                  final isSelected =
-                                      _selectedDay?.day == day &&
-                                      _selectedDay?.month ==
-                                          _selectedMonth.month;
-
-                                  return GestureDetector(
-                                    onTap: () {
-                                      setState(() {
-                                        _selectedDay = isSelected
-                                            ? null
-                                            : dayDate;
-                                      });
-                                      _fetchScans();
-                                    },
-                                    child: Container(
-                                      width: 45,
-                                      margin: const EdgeInsets.symmetric(
-                                        horizontal: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: isSelected
-                                            ? Colors.blue
-                                            : Colors.grey.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Text(
-                                            DateFormat('E').format(dayDate),
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              color: isSelected
-                                                  ? Colors.white.withOpacity(
-                                                      0.8,
-                                                    )
-                                                  : Colors.grey,
-                                            ),
-                                          ),
-                                          Text(
-                                            '$day',
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.bold,
-                                              color: isSelected
-                                                  ? Colors.white
-                                                  : Colors.black87,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
+                            _buildCalendarBookingInterface(l10n),
                           ],
                         ],
                       ),
@@ -3127,6 +3008,286 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           fillColor: Colors.white,
         ),
         validator: validator,
+      ),
+    );
+  }
+
+  Widget _buildCalendarBookingInterface(AppLocalizations l10n) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 16),
+
+        // Calendar Widget
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(16),
+          ),
+          padding: const EdgeInsets.all(12),
+          child: TableCalendar(
+            firstDay: DateTime(DateTime.now().year - 1),
+            lastDay: DateTime(DateTime.now().year + 1),
+            focusedDay: _focusedDay,
+            selectedDayPredicate: (day) {
+              return isSameDay(_rangeStart, day) || isSameDay(_rangeEnd, day);
+            },
+            rangeStartDay: _rangeStart,
+            rangeEndDay: _rangeEnd,
+            rangeSelectionMode: _rangeSelectionMode,
+            calendarFormat: CalendarFormat.month,
+            onDaySelected: (selectedDay, focusedDay) {
+              setState(() {
+                _focusedDay = focusedDay;
+
+                // Range selection logic
+                if (_rangeStart == null || _rangeEnd != null) {
+                  _rangeStart = selectedDay;
+                  _rangeEnd = null;
+                } else if (selectedDay.isBefore(_rangeStart!)) {
+                  _rangeEnd = _rangeStart;
+                  _rangeStart = selectedDay;
+                } else {
+                  _rangeEnd = selectedDay;
+                }
+              });
+              _fetchScans();
+            },
+            onRangeSelected: (start, end, focusedDay) {
+              setState(() {
+                _focusedDay = focusedDay;
+                _rangeStart = start;
+                _rangeEnd = end;
+              });
+              _fetchScans();
+            },
+            calendarStyle: CalendarStyle(
+              rangeHighlightColor: Colors.blue.withOpacity(0.2),
+              rangeStartDecoration: const BoxDecoration(
+                color: Colors.blue,
+                shape: BoxShape.circle,
+              ),
+              rangeEndDecoration: const BoxDecoration(
+                color: Colors.blue,
+                shape: BoxShape.circle,
+              ),
+              selectedDecoration: const BoxDecoration(
+                color: Colors.blue,
+                shape: BoxShape.circle,
+              ),
+              todayDecoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.3),
+                shape: BoxShape.circle,
+              ),
+              withinRangeDecoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+            ),
+            headerStyle: const HeaderStyle(
+              formatButtonVisible: false,
+              titleCentered: true,
+              leftChevronIcon: Icon(Icons.chevron_left, color: Colors.blue),
+              rightChevronIcon: Icon(Icons.chevron_right, color: Colors.blue),
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // Time Interval Selector
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Time Interval',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[700],
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Quick preset buttons
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _buildTimePresetChip(
+                    'Morning (08:00-12:00)',
+                    const TimeOfDay(hour: 8, minute: 0),
+                    const TimeOfDay(hour: 12, minute: 0),
+                  ),
+                  _buildTimePresetChip(
+                    'Afternoon (12:00-16:00)',
+                    const TimeOfDay(hour: 12, minute: 0),
+                    const TimeOfDay(hour: 16, minute: 0),
+                  ),
+                  _buildTimePresetChip(
+                    'Full Day (08:00-16:00)',
+                    const TimeOfDay(hour: 8, minute: 0),
+                    const TimeOfDay(hour: 16, minute: 0),
+                  ),
+                  _buildTimePresetChip(
+                    'All Day (00:00-23:59)',
+                    const TimeOfDay(hour: 0, minute: 0),
+                    const TimeOfDay(hour: 23, minute: 59),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 12),
+
+              // Custom time selection
+              Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      onTap: () async {
+                        final TimeOfDay? picked = await showTimePicker(
+                          context: context,
+                          initialTime: _startTime,
+                        );
+                        if (picked != null) {
+                          setState(() => _startTime = picked);
+                          _fetchScans();
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey[300]!),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.schedule,
+                              size: 18,
+                              color: Colors.blue,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Start: ${_startTime.format(context)}',
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () async {
+                        final TimeOfDay? picked = await showTimePicker(
+                          context: context,
+                          initialTime: _endTime,
+                        );
+                        if (picked != null) {
+                          setState(() => _endTime = picked);
+                          _fetchScans();
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey[300]!),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.schedule,
+                              size: 18,
+                              color: Colors.blue,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'End: ${_endTime.format(context)}',
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // Student Search Bar
+        Container(
+          height: 45,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[300]!),
+          ),
+          child: TextField(
+            controller: _scanSearchController,
+            decoration: InputDecoration(
+              hintText: 'Search by student name...',
+              hintStyle: TextStyle(fontSize: 14, color: Colors.grey[400]),
+              prefixIcon: Icon(Icons.search, size: 20, color: Colors.grey[400]),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+              isDense: true,
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTimePresetChip(String label, TimeOfDay start, TimeOfDay end) {
+    final isSelected = _startTime == start && _endTime == end;
+
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _startTime = start;
+          _endTime = end;
+        });
+        _fetchScans();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.blue : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? Colors.blue : Colors.grey[300]!,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            color: isSelected ? Colors.white : Colors.black87,
+          ),
+        ),
       ),
     );
   }
