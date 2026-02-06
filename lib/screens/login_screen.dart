@@ -387,7 +387,7 @@ class _LoginScreenState extends State<LoginScreen>
                               OutlinedButton.icon(
                                 onPressed: () async {
                                   final uri = Uri.parse(
-                                    'https://github.com/some-randomGuy03/pontaj_mobile/releases/download/v1.2.0/app-release.apk',
+                                    'https://github.com/some-randomGuy03/pontaj_mobile/releases/download/1.2.1/app-release.apk',
                                   );
                                   if (await canLaunchUrl(uri)) {
                                     await launchUrl(
