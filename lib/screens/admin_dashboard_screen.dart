@@ -60,10 +60,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   TimeOfDay _startTime = const TimeOfDay(hour: 0, minute: 0);
   TimeOfDay _endTime = const TimeOfDay(hour: 23, minute: 59);
 
-  // Legacy month/day state (for backward compatibility during transition)
-  DateTime _selectedMonth = DateTime.now();
-  DateTime? _selectedDay;
-
   bool _isHistoryExpanded = true;
   List<ScanLog>? _scans;
   bool _isLoadingScans = false;
@@ -192,24 +188,35 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     });
 
     try {
-      // Calculate start and end dates based on selection
+      // Calculate start and end dates based on calendar range selection
       final DateTime startDate;
       final DateTime endDate;
 
-      if (_selectedDay != null) {
-        // Fetch for specific day
+      if (_rangeStart != null && _rangeEnd != null) {
+        // Date range selected — fetch from rangeStart to rangeEnd (inclusive)
         startDate = DateTime(
-          _selectedDay!.year,
-          _selectedDay!.month,
-          _selectedDay!.day,
+          _rangeStart!.year,
+          _rangeStart!.month,
+          _rangeStart!.day,
         );
-        // Set end date to the next day to satisfy start < end validation
+        // Add 1 day to make the end date inclusive
+        endDate = DateTime(
+          _rangeEnd!.year,
+          _rangeEnd!.month,
+          _rangeEnd!.day,
+        ).add(const Duration(days: 1));
+      } else if (_rangeStart != null) {
+        // Single day selected (only rangeStart set, no rangeEnd yet)
+        startDate = DateTime(
+          _rangeStart!.year,
+          _rangeStart!.month,
+          _rangeStart!.day,
+        );
         endDate = startDate.add(const Duration(days: 1));
       } else {
-        // Fetch for entire month
-        startDate = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
-        // Set end date to start of next month to capture all days in current month (explicitly exclusive end logic usually)
-        endDate = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 1);
+        // No selection — fetch for the currently focused month
+        startDate = DateTime(_focusedDay.year, _focusedDay.month, 1);
+        endDate = DateTime(_focusedDay.year, _focusedDay.month + 1, 1);
       }
 
       final response = await _adminService.getScansByDate(
@@ -3061,6 +3068,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
             rangeEndDay: _rangeEnd,
             rangeSelectionMode: _rangeSelectionMode,
             calendarFormat: CalendarFormat.month,
+            onPageChanged: (focusedDay) {
+              setState(() {
+                _focusedDay = focusedDay;
+              });
+              // Refresh scans when navigating months (only if no range is selected)
+              if (_rangeStart == null && _rangeEnd == null) {
+                _fetchScans();
+              }
+            },
             onDaySelected: (selectedDay, focusedDay) {
               setState(() {
                 _focusedDay = focusedDay;
