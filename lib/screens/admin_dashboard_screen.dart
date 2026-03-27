@@ -14,6 +14,9 @@ import '../services/error_service.dart';
 import '../utils/csv_downloader.dart';
 import '../utils/apk_downloader.dart';
 import '../widgets/language_switcher.dart';
+import '../widgets/hero_background.dart';
+import '../widgets/floating_stats_sidebar.dart';
+import 'dart:ui';
 import 'login_screen.dart';
 import 'debug_screen.dart';
 
@@ -73,7 +76,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   // Scan Statistics State
   int _scansToday = 0;
   int _scansWeek = 0;
-  int _scansTwoWeeks = 0;
   int _scansMonth = 0;
   bool _isLoadingStats = false;
 
@@ -312,14 +314,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       final today = DateTime(now.year, now.month, now.day);
       final tomorrow = today.add(const Duration(days: 1));
       final weekAgo = today.subtract(const Duration(days: 7));
-      final twoWeeksAgo = today.subtract(const Duration(days: 14));
       final monthAgo = today.subtract(const Duration(days: 30));
 
       // Fetch all periods in parallel
       final results = await Future.wait([
         _adminService.getScansByDate(widget.token, today, tomorrow),
         _adminService.getScansByDate(widget.token, weekAgo, tomorrow),
-        _adminService.getScansByDate(widget.token, twoWeeksAgo, tomorrow),
         _adminService.getScansByDate(widget.token, monthAgo, tomorrow),
       ]);
 
@@ -327,8 +327,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         setState(() {
           _scansToday = results[0].data.length;
           _scansWeek = results[1].data.length;
-          _scansTwoWeeks = results[2].data.length;
-          _scansMonth = results[3].data.length;
+          _scansMonth = results[2].data.length;
         });
       }
     } catch (e) {
@@ -1650,7 +1649,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     final dateStr = DateFormat('EEEE, d MMMM', l10n.localeName).format(now);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF2F2F7), // iOS System Gray 6
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: FutureBuilder<AdminListResponse>(
         future: _adminsFuture,
         builder: (context, snapshot) {
@@ -1658,49 +1657,55 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           final data = snapshot.data;
           final admins = data?.admins ?? [];
 
-          return CustomScrollView(
-            physics: const BouncingScrollPhysics(),
+          return Stack(
+            children: [
+              CustomScrollView(
+                physics: const BouncingScrollPhysics(),
             slivers: [
               SliverAppBar(
-                expandedHeight: 140,
-                backgroundColor: const Color(0xFFF2F2F7),
+                expandedHeight: 280,
+                backgroundColor: Theme.of(context).primaryColor.withOpacity(0.85),
                 surfaceTintColor: Colors.transparent,
                 floating: false,
                 pinned: true,
-                flexibleSpace: FlexibleSpaceBar(
-                  titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
-                  title: Text(
-                    l10n.dashboard,
-                    style: TextStyle(
-                      color: Colors.black.withOpacity(0.8),
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  background: Stack(
-                    children: [
-                      Positioned(
-                        left: 20,
-                        bottom: 50,
-                        child: Text(
-                          dateStr.toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.grey[600],
-                            letterSpacing: 1.2,
-                          ),
+                flexibleSpace: ClipRRect(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0),
+                    child: FlexibleSpaceBar(
+                      titlePadding: const EdgeInsets.only(left: 88, bottom: 16),
+                      title: Text(
+                        l10n.dashboard,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    ],
+                      background: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          HeroBackground(height: 280),
+                          Positioned(
+                            left: 88,
+                            bottom: 50,
+                            child: Text(
+                              dateStr.toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white.withOpacity(0.9),
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      centerTitle: false,
+                    ),
                   ),
-                  centerTitle: false,
                 ),
                 actions: [
                   // Language Switcher
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8.0),
-                    child: LanguageSwitcher(),
-                  ),
+
                   if (kIsWeb)
                     IconButton(
                       onPressed: _downloadApk,
@@ -1821,18 +1826,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   child: Center(child: CircularProgressIndicator()),
                 )
               else ...[
-                // Charts Section
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                    child: _buildChartsSection(admins, _allElevi),
-                  ),
-                ),
 
                 // Weekly Activity Chart
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                    padding: const EdgeInsets.fromLTRB(88, 24, 24, 24),
                     child: _buildActivityChart(),
                   ),
                 ),
@@ -1840,23 +1838,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 // Reports Control & History Section
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 8,
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
+                    padding: const EdgeInsets.fromLTRB(88, 0, 24, 24),
+                      child: Container(
+                        padding: const EdgeInsets.all(40),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).cardColor,
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Theme.of(context).primaryColor.withOpacity(Theme.of(context).brightness == Brightness.dark ? 0.3 : 0.1),
+                              blurRadius: 40,
+                              offset: const Offset(0, 10),
+                            ),
+                          ],
+                        ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1876,7 +1871,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                                       style: TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.bold,
-                                        color: Colors.black.withOpacity(0.8),
+                                        color: Theme.of(context).primaryColor,
                                       ),
                                     ),
                                     if (_scans != null && _scans!.isNotEmpty)
@@ -1884,7 +1879,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                                         '${_scans!.map((s) => s.idElev).toSet().length} ${l10n.studentsScanned}',
                                         style: TextStyle(
                                           fontSize: 12,
-                                          color: Colors.grey[600],
+                                          color: Theme.of(context).textTheme.bodyMedium?.color,
                                         ),
                                       ),
                                   ],
@@ -1955,7 +1950,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   )
                 else
                   SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                    padding: const EdgeInsets.fromLTRB(88, 0, 24, 24),
                     sliver: Builder(
                       builder: (context) {
                         // Filter scans by time interval and search query
@@ -2022,14 +2017,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                               child: ExpansionTile(
                                 shape: Border.all(color: Colors.transparent),
                                 tilePadding: const EdgeInsets.symmetric(
-                                  horizontal: 20,
+                                  horizontal: 24,
                                   vertical: 8,
                                 ),
                                 leading: Container(
                                   width: 48,
                                   height: 48,
                                   decoration: BoxDecoration(
-                                    color: Colors.blue.withOpacity(0.1),
+                                    color: Theme.of(context).colorScheme.secondary.withOpacity(0.1),
                                     shape: BoxShape.circle,
                                   ),
                                   child: Center(
@@ -2038,7 +2033,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                                           ? firstScan.name[0].toUpperCase()
                                           : '?',
                                       style: TextStyle(
-                                        color: Colors.blue[700],
+                                        color: Theme.of(context).colorScheme.secondary,
                                         fontWeight: FontWeight.bold,
                                         fontSize: 18,
                                       ),
@@ -2066,13 +2061,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                                     vertical: 6,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Colors.blue.shade50,
+                                    color: Theme.of(context).colorScheme.secondary.withOpacity(0.1),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Text(
                                     '${studentScans.length} scans',
                                     style: TextStyle(
-                                      color: Colors.blue[700],
+                                      color: Theme.of(context).colorScheme.secondary,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 14,
                                     ),
@@ -2116,7 +2111,27 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   ),
 
                 const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
-              ],
+              ], // ends else ...[
+            ], // ends slivers: [
+          ), // ends CustomScrollView
+        Positioned(
+          top: 0,
+          bottom: 0,
+          left: 0,
+          child: FloatingStatsSidebar(
+            professorsCount: admins.length,
+            studentsCount: _allElevi.length,
+            enrolledCount: _currentElevi.length,
+            scansToday: _scansToday,
+            scansWeek: _scansWeek,
+
+            scansMonth: _scansMonth,
+            onTapProfessors: _showProfessorsListModal,
+            onTapStudents: _showStudentsListModal,
+            onTapEnrolled: _showEnrolledStudentsModal,
+            l10n: l10n,
+          ),
+        ),
             ],
           );
         },
@@ -2300,537 +2315,40 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     );
   }
 
-  Widget _buildChartsSection(List<Professor> admins, List<Elev> elevi) {
-    final l10n = AppLocalizations.of(context)!;
-
-    final int totalProfessors = admins.length;
-    final int totalStudents = elevi.length;
-    final int totalEnrolled = _currentElevi.length;
-    final int total = totalProfessors + totalStudents;
-
-    // Calculate percentages for pie chart
-    final double profPercentage = total > 0
-        ? (totalProfessors / total) * 100
-        : 50;
-    final double studPercentage = total > 0
-        ? (totalStudents / total) * 100
-        : 50;
-
-    return Center(
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 1400),
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Wrap(
-          spacing: 24,
-          runSpacing: 24,
-          alignment: WrapAlignment.center,
-          children: [
-            // Stats Overview Card (Professors, Students, Enrolled)
-            ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 300, maxWidth: 500),
-              child: _buildChartCard(
-                title: l10n.total,
-                width: 440,
-                child: SizedBox(
-                  height: 120,
-                  child: Row(
-                    children: [
-                      // Professors stat
-                      Expanded(
-                        child: InkWell(
-                          onTap: _showProfessorsListModal,
-                          borderRadius: BorderRadius.circular(16),
-                          child: Container(
-                            margin: const EdgeInsets.only(right: 4),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.blue.shade50,
-                                  Colors.blue.shade100.withOpacity(0.5),
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue.withOpacity(0.1),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    Icons.person,
-                                    color: Colors.blue[600],
-                                    size: 20,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  '$totalProfessors',
-                                  style: TextStyle(
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.blue[700],
-                                  ),
-                                ),
-                                Text(
-                                  l10n.professors,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.blue[600],
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      // Students stat
-                      Expanded(
-                        child: InkWell(
-                          onTap: _showStudentsListModal,
-                          borderRadius: BorderRadius.circular(16),
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.green.shade50,
-                                  Colors.green.shade100.withOpacity(0.5),
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.withOpacity(0.1),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    Icons.school,
-                                    color: Colors.green[600],
-                                    size: 20,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  '$totalStudents',
-                                  style: TextStyle(
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.green[700],
-                                  ),
-                                ),
-                                Text(
-                                  l10n.students,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.green[600],
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      // Enrolled Students stat
-                      Expanded(
-                        child: InkWell(
-                          onTap: _showEnrolledStudentsModal,
-                          borderRadius: BorderRadius.circular(16),
-                          child: Container(
-                            margin: const EdgeInsets.only(left: 4),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.purple.shade50,
-                                  Colors.purple.shade100.withOpacity(0.5),
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.purple.withOpacity(0.1),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    Icons.how_to_reg,
-                                    color: Colors.purple[600],
-                                    size: 20,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  '$totalEnrolled',
-                                  style: TextStyle(
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.purple[700],
-                                  ),
-                                ),
-                                Text(
-                                  l10n.enrolled,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.purple[600],
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            // Scan Statistics Card
-            ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 300, maxWidth: 600),
-              child: _buildChartCard(
-                title: l10n.scanHistory,
-                width: 520,
-                child: SizedBox(
-                  height: 120,
-                  child: Row(
-                    children: [
-                      // Scans Today - Blue
-                      Expanded(
-                        child: Container(
-                          margin: const EdgeInsets.only(right: 4),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Colors.blue.shade50,
-                                Colors.blue.shade100.withOpacity(0.5),
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: Colors.blue.withOpacity(0.1),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  Icons.today,
-                                  color: Colors.blue[600],
-                                  size: 20,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                _isLoadingStats ? '...' : '$_scansToday',
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.blue[700],
-                                ),
-                              ),
-                              Text(
-                                l10n.scansToday,
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  color: Colors.blue[600],
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      // Scans Week - Amber
-                      Expanded(
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 4),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Colors.amber.shade50,
-                                Colors.amber.shade100.withOpacity(0.5),
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: Colors.amber.withOpacity(0.1),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  Icons.date_range,
-                                  color: Colors.amber[700],
-                                  size: 20,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                _isLoadingStats ? '...' : '$_scansWeek',
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.amber[800],
-                                ),
-                              ),
-                              Text(
-                                l10n.scansWeek,
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  color: Colors.amber[700],
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      // Scans 2 Weeks - Orange
-                      Expanded(
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 4),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Colors.orange.shade50,
-                                Colors.orange.shade100.withOpacity(0.5),
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange.withOpacity(0.1),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  Icons.calendar_view_week,
-                                  color: Colors.orange[700],
-                                  size: 20,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                _isLoadingStats ? '...' : '$_scansTwoWeeks',
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.orange[800],
-                                ),
-                              ),
-                              Text(
-                                l10n.scansTwoWeeks,
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  color: Colors.orange[700],
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      // Scans Month - Red
-                      Expanded(
-                        child: Container(
-                          margin: const EdgeInsets.only(left: 4),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Colors.red.shade50,
-                                Colors.red.shade100.withOpacity(0.5),
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: Colors.red.withOpacity(0.1),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  Icons.calendar_month,
-                                  color: Colors.red[600],
-                                  size: 20,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                _isLoadingStats ? '...' : '$_scansMonth',
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.red[700],
-                                ),
-                              ),
-                              Text(
-                                l10n.scansMonth,
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  color: Colors.red[600],
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            // Distribution Pie Chart
-            ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 200, maxWidth: 300),
-              child: _buildChartCard(
-                title: l10n.systemStatus,
-                width: 280,
-                child: SizedBox(
-                  height: 120,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      PieChart(
-                        PieChartData(
-                          sectionsSpace: 3,
-                          centerSpaceRadius: 35,
-                          startDegreeOffset: -90,
-                          sections: [
-                            PieChartSectionData(
-                              color: Colors.blue[500],
-                              value: profPercentage,
-                              showTitle: false,
-                              radius: 20,
-                            ),
-                            PieChartSectionData(
-                              color: Colors.green[500],
-                              value: studPercentage,
-                              showTitle: false,
-                              radius: 20,
-                            ),
-                          ],
-                        ),
-                      ),
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            '$total',
-                            style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey[800],
-                            ),
-                          ),
-                          Text(
-                            l10n.total,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.grey[600],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _buildActivityChart() {
     final l10n = AppLocalizations.of(context)!;
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(24),
       height: 300,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: const Color(0xFF002B5C).withOpacity(0.1),
+            blurRadius: 40,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Weekly Activity',
             style: TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 18,
               letterSpacing: -0.5,
+              color: Theme.of(context).primaryColor,
             ),
           ),
           const SizedBox(height: 4),
           Text(
             'Unique Students (Mon-Fri)',
-            style: TextStyle(color: Colors.grey[500], fontSize: 12),
+            style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color, fontSize: 12),
           ),
           const SizedBox(height: 24),
           Expanded(
@@ -2945,9 +2463,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: const Color(0xFF002B5C).withOpacity(0.1),
+            blurRadius: 40,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
@@ -2961,6 +2479,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
               fontWeight: FontWeight.bold,
               fontSize: 16,
               letterSpacing: -0.5,
+              color: Color(0xFF002B5C), // Navy Blue
             ),
           ),
           const SizedBox(height: 16),
@@ -3186,85 +2705,119 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
               const SizedBox(height: 12),
 
-              // Custom time selection
+              // Custom time selection using easier Dropdowns
               Row(
                 children: [
                   Expanded(
-                    child: InkWell(
-                      onTap: () async {
-                        final TimeOfDay? picked = await showTimePicker(
-                          context: context,
-                          initialTime: _startTime,
-                        );
-                        if (picked != null) {
-                          setState(() => _startTime = picked);
-                          _fetchScans();
-                        }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.grey[300]!),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.schedule,
-                              size: 18,
-                              color: Colors.blue,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey[300]!),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.schedule,
+                            size: 18,
+                            color: Colors.blue,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<int>(
+                                value: _startTime.hour,
+                                isExpanded: true,
+                                icon: const Icon(Icons.arrow_drop_down),
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.black87,
+                                ),
+                                onChanged: (int? newValue) {
+                                  if (newValue != null) {
+                                    setState(() {
+                                      _startTime = TimeOfDay(hour: newValue, minute: 0);
+                                    });
+                                    _fetchScans();
+                                  }
+                                },
+                                items: List.generate(24, (index) {
+                                  final displayHour = index.toString().padLeft(2, '0');
+                                  return DropdownMenuItem<int>(
+                                    value: index,
+                                    child: Text('Start: $displayHour:00'),
+                                  );
+                                }),
+                              ),
                             ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Start: ${_startTime.format(context)}',
-                              style: const TextStyle(fontSize: 14),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: InkWell(
-                      onTap: () async {
-                        final TimeOfDay? picked = await showTimePicker(
-                          context: context,
-                          initialTime: _endTime,
-                        );
-                        if (picked != null) {
-                          setState(() => _endTime = picked);
-                          _fetchScans();
-                        }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.grey[300]!),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.schedule,
-                              size: 18,
-                              color: Colors.blue,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey[300]!),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.schedule,
+                            size: 18,
+                            color: Colors.blue,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<int>(
+                                value: _endTime.hour == 23 && _endTime.minute == 59 ? 24 : _endTime.hour,
+                                isExpanded: true,
+                                icon: const Icon(Icons.arrow_drop_down),
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.black87,
+                                ),
+                                onChanged: (int? newValue) {
+                                  if (newValue != null) {
+                                    setState(() {
+                                      if (newValue == 24) {
+                                        _endTime = const TimeOfDay(hour: 23, minute: 59);
+                                      } else {
+                                        _endTime = TimeOfDay(hour: newValue, minute: 0);
+                                      }
+                                    });
+                                    _fetchScans();
+                                  }
+                                },
+                                items: List.generate(25, (index) {
+                                  if (index == 24) {
+                                    return const DropdownMenuItem<int>(
+                                      value: 24,
+                                      child: Text('End: 23:59'),
+                                    );
+                                  }
+                                  final displayHour = index.toString().padLeft(2, '0');
+                                  return DropdownMenuItem<int>(
+                                    value: index,
+                                    child: Text('End: $displayHour:00'),
+                                  );
+                                }),
+                              ),
                             ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'End: ${_endTime.format(context)}',
-                              style: const TextStyle(fontSize: 14),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

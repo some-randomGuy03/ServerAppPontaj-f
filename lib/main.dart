@@ -6,11 +6,15 @@ import 'screens/login_screen.dart';
 import 'theme/app_theme.dart';
 import 'widgets/error_overlay.dart';
 import 'providers/language_provider.dart';
+import 'providers/theme_provider.dart';
 
 void main() {
   runApp(
     MultiProvider(
-      providers: [ChangeNotifierProvider(create: (_) => LanguageProvider())],
+      providers: [
+        ChangeNotifierProvider(create: (_) => LanguageProvider()),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+      ],
       child: const MyApp(),
     ),
   );
@@ -22,11 +26,15 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final languageProvider = Provider.of<LanguageProvider>(context);
+    final themeProvider = Provider.of<ThemeProvider>(context);
 
     return MaterialApp(
       title: 'Pontaj Admin',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
+      theme: AppTheme.theme(
+        isDarkMode: themeProvider.isDarkMode,
+        accentColorType: themeProvider.accentColorType,
+      ),
       locale: languageProvider.currentLocale,
       localizationsDelegates: const [
         AppLocalizations.delegate,

@@ -150,8 +150,8 @@ class _LoginScreenState extends State<LoginScreen>
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                         colors: [
-                          Theme.of(context).primaryColor,
-                          Theme.of(context).primaryColor.withOpacity(0.8),
+                          const Color(0xFF002B5C), // Navy Blue
+                          const Color(0xFFD4AF37), // School Gold
                         ],
                       ),
                     ),
@@ -194,7 +194,7 @@ class _LoginScreenState extends State<LoginScreen>
               Expanded(
                 flex: 6,
                 child: Container(
-                  color: Colors.white,
+                  color: Theme.of(context).scaffoldBackgroundColor,
                   child: Center(
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.symmetric(horizontal: 48.0),
@@ -240,14 +240,14 @@ class _LoginScreenState extends State<LoginScreen>
                                     .headlineMedium
                                     ?.copyWith(
                                       fontWeight: FontWeight.bold,
-                                      color: Colors.black87,
+                                      color: Theme.of(context).textTheme.headlineMedium?.color,
                                     ),
                               ),
                               const SizedBox(height: 8),
                               Text(
                                 l10n.signInMessage,
                                 style: TextStyle(
-                                  color: Colors.grey[600],
+                                  color: Theme.of(context).textTheme.bodyMedium?.color,
                                   fontSize: 16,
                                 ),
                               ),
@@ -273,7 +273,7 @@ class _LoginScreenState extends State<LoginScreen>
                                           borderSide: BorderSide.none,
                                         ),
                                         filled: true,
-                                        fillColor: Colors.grey[100],
+                                        fillColor: Theme.of(context).cardColor,
                                         contentPadding: const EdgeInsets.all(
                                           20,
                                         ),
@@ -282,6 +282,7 @@ class _LoginScreenState extends State<LoginScreen>
                                           value?.isEmpty ?? true
                                           ? l10n.requiredField
                                           : null,
+                                      onFieldSubmitted: (_) => _handleLogin(),
                                     ),
                                     const SizedBox(height: 24),
                                     TextFormField(
@@ -298,7 +299,7 @@ class _LoginScreenState extends State<LoginScreen>
                                           borderSide: BorderSide.none,
                                         ),
                                         filled: true,
-                                        fillColor: Colors.grey[100],
+                                        fillColor: Theme.of(context).cardColor,
                                         contentPadding: const EdgeInsets.all(
                                           20,
                                         ),
@@ -308,6 +309,7 @@ class _LoginScreenState extends State<LoginScreen>
                                           value?.isEmpty ?? true
                                           ? l10n.requiredField
                                           : null,
+                                      onFieldSubmitted: (_) => _handleLogin(),
                                     ),
                                     const SizedBox(height: 32),
                                     SizedBox(
@@ -316,18 +318,6 @@ class _LoginScreenState extends State<LoginScreen>
                                         onPressed: _isLoading
                                             ? null
                                             : _handleLogin,
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Theme.of(
-                                            context,
-                                          ).primaryColor,
-                                          foregroundColor: Colors.white,
-                                          elevation: 0,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              16,
-                                            ),
-                                          ),
-                                        ),
                                         child: _isLoading
                                             ? const SizedBox(
                                                 height: 24,
