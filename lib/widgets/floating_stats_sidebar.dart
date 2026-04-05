@@ -16,6 +16,10 @@ class FloatingStatsSidebar extends StatefulWidget {
   final int scansWeek;
   final int scansMonth;
   final AppLocalizations l10n;
+  final VoidCallback? onTapWeek;
+  final VoidCallback? onTapMonth;
+  final String? weekLabel;
+  final String? monthLabel;
 
   const FloatingStatsSidebar({
     super.key,
@@ -29,6 +33,10 @@ class FloatingStatsSidebar extends StatefulWidget {
     required this.scansWeek,
     required this.scansMonth,
     required this.l10n,
+    this.onTapWeek,
+    this.onTapMonth,
+    this.weekLabel,
+    this.monthLabel,
   });
 
   @override
@@ -139,23 +147,23 @@ class _FloatingStatsSidebarState extends State<FloatingStatsSidebar> {
                       const SizedBox(height: 16),
                       _SidebarItem(
                         icon: Icons.date_range,
-                        label: widget.l10n.scansWeek,
+                        label: widget.weekLabel ?? widget.l10n.scansWeek,
                         count: '${widget.scansWeek}',
                         color: Colors.amber,
+                        onTap: widget.onTapWeek,
                         isSidebarExpanded: _isSidebarHovered,
-                        isClickable: false,
+                        isClickable: widget.onTapWeek != null,
                       ),
                       const SizedBox(height: 16),
                       _SidebarItem(
                         icon: Icons.calendar_month,
-                        label: widget.l10n.scansMonth,
+                        label: widget.monthLabel ?? widget.l10n.scansMonth,
                         count: '${widget.scansMonth}',
                         color: Colors.red,
+                        onTap: widget.onTapMonth,
                         isSidebarExpanded: _isSidebarHovered,
-                        isClickable: false,
+                        isClickable: widget.onTapMonth != null,
                       ),
-
-                      const Spacer(), // Pushes settings to the bottom if there's space
                       const SizedBox(height: 32),
 
                       // Settings Section - Unified Scroll
@@ -170,7 +178,7 @@ class _FloatingStatsSidebarState extends State<FloatingStatsSidebar> {
                           
                           _SidebarToggleItem(
                             icon: themeProvider.isDarkMode ? Icons.light_mode : Icons.dark_mode,
-                            label: themeProvider.isDarkMode ? "Light Mode" : "Dark Mode",
+                            label: themeProvider.isDarkMode ? widget.l10n.lightMode : widget.l10n.darkMode,
                             onTap: themeProvider.toggleTheme,
                             isSidebarExpanded: _isSidebarHovered,
                             color: Colors.indigo,
@@ -178,7 +186,7 @@ class _FloatingStatsSidebarState extends State<FloatingStatsSidebar> {
                           const SizedBox(height: 8),
                           _SidebarToggleItem(
                             icon: Icons.palette,
-                            label: themeProvider.accentColorType == AccentColorType.yellow ? "Blue Accent" : "Yellow Accent",
+                            label: themeProvider.accentColorType == AccentColorType.yellow ? widget.l10n.blueAccent : widget.l10n.yellowAccent,
                             onTap: themeProvider.toggleAccentColor,
                             isSidebarExpanded: _isSidebarHovered,
                             color: Colors.cyan,

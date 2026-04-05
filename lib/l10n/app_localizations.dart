@@ -98,7 +98,7 @@ abstract class AppLocalizations {
     Locale('ro'),
   ];
 
-  /// Titlul aplicatiei
+  /// No description provided for @appTitle.
   ///
   /// In ro, this message translates to:
   /// **'Pontaj Admin'**
@@ -119,7 +119,7 @@ abstract class AppLocalizations {
   /// No description provided for @settings.
   ///
   /// In ro, this message translates to:
-  /// **'Setari'**
+  /// **'Setări'**
   String get settings;
 
   /// No description provided for @logout.
@@ -143,25 +143,25 @@ abstract class AppLocalizations {
   /// No description provided for @password.
   ///
   /// In ro, this message translates to:
-  /// **'Parola'**
+  /// **'Parolă'**
   String get password;
 
   /// No description provided for @loginButton.
   ///
   /// In ro, this message translates to:
-  /// **'Intra in Cont'**
+  /// **'Conectare'**
   String get loginButton;
 
   /// No description provided for @language.
   ///
   /// In ro, this message translates to:
-  /// **'Limba'**
+  /// **'Limbă'**
   String get language;
 
   /// No description provided for @selectLanguage.
   ///
   /// In ro, this message translates to:
-  /// **'Selecteaza Limba'**
+  /// **'Selectați Limba'**
   String get selectLanguage;
 
   /// No description provided for @welcomeBack.
@@ -173,7 +173,7 @@ abstract class AppLocalizations {
   /// No description provided for @signInMessage.
   ///
   /// In ro, this message translates to:
-  /// **'Te rugam sa te autentifici pentru a accesa portalul.'**
+  /// **'Vă rugăm să vă autentificați pentru a accesa portalul admin.'**
   String get signInMessage;
 
   /// No description provided for @requiredField.
@@ -203,19 +203,19 @@ abstract class AppLocalizations {
   /// No description provided for @statsExportedSuccess.
   ///
   /// In ro, this message translates to:
-  /// **'Statistici exportate în CSV cu succes'**
+  /// **'Statisticile au fost exportate în CSV cu succes'**
   String get statsExportedSuccess;
 
   /// No description provided for @editProfessor.
   ///
   /// In ro, this message translates to:
-  /// **'Editează Profesor'**
+  /// **'Editare Profesor'**
   String get editProfessor;
 
   /// No description provided for @addProfessor.
   ///
   /// In ro, this message translates to:
-  /// **'Adaugă Profesor'**
+  /// **'Adăugare Profesor'**
   String get addProfessor;
 
   /// No description provided for @name.
@@ -233,7 +233,7 @@ abstract class AppLocalizations {
   /// No description provided for @emailInvalid.
   ///
   /// In ro, this message translates to:
-  /// **'Email-ul trebuie să fie în formatul: user@domain.com'**
+  /// **'Email-ul trebuie să fie în format: utilizator@domeniu.com'**
   String get emailInvalid;
 
   /// No description provided for @newPassword.
@@ -257,13 +257,13 @@ abstract class AppLocalizations {
   /// No description provided for @cancel.
   ///
   /// In ro, this message translates to:
-  /// **'Anulează'**
+  /// **'Anulare'**
   String get cancel;
 
   /// No description provided for @save.
   ///
   /// In ro, this message translates to:
-  /// **'Salvează'**
+  /// **'Salvare'**
   String get save;
 
   /// No description provided for @add.
@@ -275,13 +275,13 @@ abstract class AppLocalizations {
   /// No description provided for @confirmDelete.
   ///
   /// In ro, this message translates to:
-  /// **'Confirmă Ștergerea'**
+  /// **'Confirmare Ștergere'**
   String get confirmDelete;
 
   /// No description provided for @deleteConfirmation.
   ///
   /// In ro, this message translates to:
-  /// **'Ești sigur că vrei să ștergi pe {name}?'**
+  /// **'Sigur doriți să ștergeți pe {name}?'**
   String deleteConfirmation(String name);
 
   /// No description provided for @delete.
@@ -323,7 +323,7 @@ abstract class AppLocalizations {
   /// No description provided for @idGrowth.
   ///
   /// In ro, this message translates to:
-  /// **'Creștere ID (Activitate)'**
+  /// **'Evoluție ID (Activitate)'**
   String get idGrowth;
 
   /// No description provided for @systemStatus.
@@ -347,7 +347,7 @@ abstract class AppLocalizations {
   /// No description provided for @clearLogsConfirmation.
   ///
   /// In ro, this message translates to:
-  /// **'Ești sigur că vrei să ștergi toate jurnalele?'**
+  /// **'Sigur doriți să ștergeți toate jurnalele?'**
   String get clearLogsConfirmation;
 
   /// No description provided for @clear.
@@ -359,7 +359,7 @@ abstract class AppLocalizations {
   /// No description provided for @searchLogs.
   ///
   /// In ro, this message translates to:
-  /// **'Caută Jurnale'**
+  /// **'Căutare Jurnale'**
   String get searchLogs;
 
   /// No description provided for @all.
@@ -371,19 +371,19 @@ abstract class AppLocalizations {
   /// No description provided for @withInput.
   ///
   /// In ro, this message translates to:
-  /// **'Cu Intrare'**
+  /// **'Cu Input'**
   String get withInput;
 
   /// No description provided for @withOutput.
   ///
   /// In ro, this message translates to:
-  /// **'Cu Ieșire'**
+  /// **'Cu Output'**
   String get withOutput;
 
   /// No description provided for @stackTraces.
   ///
   /// In ro, this message translates to:
-  /// **'Urme Stivă'**
+  /// **'Stack Traces'**
   String get stackTraces;
 
   /// No description provided for @noLogsMatch.
@@ -395,25 +395,25 @@ abstract class AppLocalizations {
   /// No description provided for @noLogsYet.
   ///
   /// In ro, this message translates to:
-  /// **'Niciun jurnal încă'**
+  /// **'Nu există jurnale încă'**
   String get noLogsYet;
 
   /// No description provided for @input.
   ///
   /// In ro, this message translates to:
-  /// **'Intrare'**
+  /// **'Input'**
   String get input;
 
   /// No description provided for @output.
   ///
   /// In ro, this message translates to:
-  /// **'Ieșire'**
+  /// **'Output'**
   String get output;
 
   /// No description provided for @trace.
   ///
   /// In ro, this message translates to:
-  /// **'URMĂ'**
+  /// **'TRACE'**
   String get trace;
 
   /// No description provided for @fullMessage.
@@ -425,7 +425,7 @@ abstract class AppLocalizations {
   /// No description provided for @stackTrace.
   ///
   /// In ro, this message translates to:
-  /// **'Urmă Stivă'**
+  /// **'Stack Trace'**
   String get stackTrace;
 
   /// No description provided for @copied.
@@ -461,7 +461,7 @@ abstract class AppLocalizations {
   /// No description provided for @editStudent.
   ///
   /// In ro, this message translates to:
-  /// **'Editează Elev'**
+  /// **'Editare Elev'**
   String get editStudent;
 
   /// No description provided for @studentCode.
@@ -473,7 +473,7 @@ abstract class AppLocalizations {
   /// No description provided for @activeStatus.
   ///
   /// In ro, this message translates to:
-  /// **'Status Activ'**
+  /// **'Stare Activ'**
   String get activeStatus;
 
   /// No description provided for @active.
@@ -515,7 +515,7 @@ abstract class AppLocalizations {
   /// No description provided for @dateRange.
   ///
   /// In ro, this message translates to:
-  /// **'Interval Dată'**
+  /// **'Interval Date'**
   String get dateRange;
 
   /// No description provided for @noScansFound.
@@ -527,7 +527,7 @@ abstract class AppLocalizations {
   /// No description provided for @noEnrolledStudents.
   ///
   /// In ro, this message translates to:
-  /// **'Niciun elev înscris'**
+  /// **'Nu există elevi înscriși'**
   String get noEnrolledStudents;
 
   /// No description provided for @scansToday.
@@ -539,7 +539,7 @@ abstract class AppLocalizations {
   /// No description provided for @scansWeek.
   ///
   /// In ro, this message translates to:
-  /// **'Scanări Săptămână'**
+  /// **'Scanări Săpt.'**
   String get scansWeek;
 
   /// No description provided for @scansTwoWeeks.
@@ -563,8 +563,188 @@ abstract class AppLocalizations {
   /// No description provided for @enrolled.
   ///
   /// In ro, this message translates to:
-  /// **'Înscriși'**
+  /// **'Înrolat'**
   String get enrolled;
+
+  /// No description provided for @selectTimeInterval.
+  ///
+  /// In ro, this message translates to:
+  /// **'Selectați Intervalul Orar'**
+  String get selectTimeInterval;
+
+  /// No description provided for @startTime.
+  ///
+  /// In ro, this message translates to:
+  /// **'Ora Start'**
+  String get startTime;
+
+  /// No description provided for @endTime.
+  ///
+  /// In ro, this message translates to:
+  /// **'Ora Sfârșit'**
+  String get endTime;
+
+  /// No description provided for @apply.
+  ///
+  /// In ro, this message translates to:
+  /// **'Aplică'**
+  String get apply;
+
+  /// No description provided for @sevenDays.
+  ///
+  /// In ro, this message translates to:
+  /// **'(7 Zile)'**
+  String get sevenDays;
+
+  /// No description provided for @thirtyDays.
+  ///
+  /// In ro, this message translates to:
+  /// **'(30 Zile)'**
+  String get thirtyDays;
+
+  /// No description provided for @thisWeek.
+  ///
+  /// In ro, this message translates to:
+  /// **'(Săptămâna aceasta)'**
+  String get thisWeek;
+
+  /// No description provided for @thisMonth.
+  ///
+  /// In ro, this message translates to:
+  /// **'(Luna aceasta)'**
+  String get thisMonth;
+
+  /// No description provided for @searchByStudentName.
+  ///
+  /// In ro, this message translates to:
+  /// **'Caută după nume elev...'**
+  String get searchByStudentName;
+
+  /// No description provided for @weeklyActivity.
+  ///
+  /// In ro, this message translates to:
+  /// **'Activitate Săptămânală'**
+  String get weeklyActivity;
+
+  /// No description provided for @mon.
+  ///
+  /// In ro, this message translates to:
+  /// **'Lun'**
+  String get mon;
+
+  /// No description provided for @tue.
+  ///
+  /// In ro, this message translates to:
+  /// **'Mar'**
+  String get tue;
+
+  /// No description provided for @wed.
+  ///
+  /// In ro, this message translates to:
+  /// **'Mie'**
+  String get wed;
+
+  /// No description provided for @thu.
+  ///
+  /// In ro, this message translates to:
+  /// **'Joi'**
+  String get thu;
+
+  /// No description provided for @fri.
+  ///
+  /// In ro, this message translates to:
+  /// **'Vin'**
+  String get fri;
+
+  /// No description provided for @lightMode.
+  ///
+  /// In ro, this message translates to:
+  /// **'Mod Luminos'**
+  String get lightMode;
+
+  /// No description provided for @darkMode.
+  ///
+  /// In ro, this message translates to:
+  /// **'Mod Intunecat'**
+  String get darkMode;
+
+  /// No description provided for @blueAccent.
+  ///
+  /// In ro, this message translates to:
+  /// **'Accent Albastru'**
+  String get blueAccent;
+
+  /// No description provided for @yellowAccent.
+  ///
+  /// In ro, this message translates to:
+  /// **'Accent Galben'**
+  String get yellowAccent;
+
+  /// No description provided for @uniqueStudents.
+  ///
+  /// In ro, this message translates to:
+  /// **'Elevi Unici (Lun-Vin)'**
+  String get uniqueStudents;
+
+  /// No description provided for @filterStudents.
+  ///
+  /// In ro, this message translates to:
+  /// **'Filtrează Elevi'**
+  String get filterStudents;
+
+  /// No description provided for @close.
+  ///
+  /// In ro, this message translates to:
+  /// **'Închide'**
+  String get close;
+
+  /// No description provided for @day.
+  ///
+  /// In ro, this message translates to:
+  /// **'Zi'**
+  String get day;
+
+  /// No description provided for @week.
+  ///
+  /// In ro, this message translates to:
+  /// **'Săptămână'**
+  String get week;
+
+  /// No description provided for @month.
+  ///
+  /// In ro, this message translates to:
+  /// **'Lună'**
+  String get month;
+
+  /// No description provided for @rolling.
+  ///
+  /// In ro, this message translates to:
+  /// **'Mobil'**
+  String get rolling;
+
+  /// No description provided for @calendar.
+  ///
+  /// In ro, this message translates to:
+  /// **'Calendar'**
+  String get calendar;
+
+  /// No description provided for @totalScans.
+  ///
+  /// In ro, this message translates to:
+  /// **'Total Scanări'**
+  String get totalScans;
+
+  /// No description provided for @hourlyDistribution.
+  ///
+  /// In ro, this message translates to:
+  /// **'Distribuție Orară'**
+  String get hourlyDistribution;
+
+  /// No description provided for @scansPerHour.
+  ///
+  /// In ro, this message translates to:
+  /// **'Scanări pe Oră'**
+  String get scansPerHour;
 }
 
 class _AppLocalizationsDelegate

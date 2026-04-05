@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import '../providers/theme_provider.dart';
 
 class AppTheme {
-  static const Color primaryBlue = Color(0xFF002B5C); // Navy Blue
-  static const Color accentGold = Color(0xFFD4AF37); // School Gold
+  static const Color primaryBlue = Color(0xFF001A3D); // Darker Navy Blue
+  static const Color accentGold = Color(0xFFB8860B); // Darker School Gold
   static const Color backgroundLight = Color(0xFFF5F5F5); // Light Gray
   static const Color surfaceWhite = Colors.white;
 
@@ -13,7 +13,7 @@ class AppTheme {
   }) {
     final Color accentColor = accentColorType == AccentColorType.yellow
         ? accentGold
-        : Colors.lightBlueAccent;
+        : const Color(0xFF0056B3); // Darker Blue Accent
 
     final Color bgColor = isDarkMode ? const Color(0xFF0F1115) : backgroundLight;
     final Color surfaceColor = isDarkMode ? const Color(0xFF1A1F26) : surfaceWhite;
@@ -26,7 +26,9 @@ class AppTheme {
       colorScheme: ColorScheme.fromSeed(
         seedColor: primaryBlue,
         brightness: isDarkMode ? Brightness.dark : Brightness.light,
-        primary: isDarkMode ? (accentColorType == AccentColorType.yellow ? Colors.amber[200]! : Colors.blue[300]!) : primaryBlue,
+        primary: isDarkMode 
+          ? (accentColorType == AccentColorType.yellow ? Colors.amber[200]! : Colors.blue[300]!) 
+          : (accentColorType == AccentColorType.yellow ? const Color(0xFF001A3D) : const Color(0xFF0D47A1)),
         secondary: accentColor,
         surface: surfaceColor,
         background: bgColor,

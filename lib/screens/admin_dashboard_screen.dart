@@ -17,8 +17,13 @@ import '../widgets/language_switcher.dart';
 import '../widgets/hero_background.dart';
 import '../widgets/floating_stats_sidebar.dart';
 import 'dart:ui';
+import 'dart:async';
+import 'package:provider/provider.dart';
+import '../providers/theme_provider.dart';
 import 'login_screen.dart';
 import 'debug_screen.dart';
+
+enum ChartPeriod { day, week, month }
 
 class AdminDashboardScreen extends StatefulWidget {
   final String token;
@@ -72,12 +77,126 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
   // Student search in scans
   final TextEditingController _scanSearchController = TextEditingController();
+  List<int> _selectedStudentFilters = [];
+
+  // Chart state
+  // --- Analytics Chart State ---
+  ChartPeriod _chartPeriod = ChartPeriod.week; // Current timeframe: Day, Week, or Month
+  bool _isChartRolling = false; // Toggle: Start of period (Calendar) vs Last X days (Rolling)
+  List<ScanLog>? _chartScans; // Cached raw analysis data from the last API call
+  bool _isLoadingCharts = false; // Spinner flag for async data fetching
+  List<FlSpot> _uniqueStudentsSpots = []; // Prepared coordinate points for the unique students line chart
+  List<double> _totalScansRaw = []; // Raw aggregation values for the pillar chart (Reactive)
+  List<BarChartGroupData> _totalScansBarGroups = []; // Prepared bar groups for the total pillar chart
+  List<BarChartGroupData> _hourlyDistributionBarGroups = []; // Prepared groups for the activity heatmap
+
+
+  void _showStudentFilterDialog(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    
+    // Show ALL enrolled students, not just those with scans
+    final sortedStudents = List<Elev>.from(_currentElevi)
+      ..sort((a, b) => a.name.compareTo(b.name));
+
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: Theme.of(context).cardColor,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  Icon(Icons.filter_list, color: Theme.of(context).primaryColor),
+                  const SizedBox(width: 8),
+                  Text(l10n.filterStudents),
+                ],
+              ),
+              content: SizedBox(
+                width: MediaQuery.of(context).size.width * 0.8,
+                height: MediaQuery.of(context).size.height * 0.6,
+                child: Column(
+                  children: [
+                    TextField(
+                      controller: _scanSearchController,
+                      onChanged: (val) => setDialogState((){}),
+                      decoration: InputDecoration(
+                        hintText: l10n.searchByStudentName,
+                        prefixIcon: const Icon(Icons.search),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: ListView(
+                        children: sortedStudents.where((student) {
+                          return _scanSearchController.text.isEmpty ||
+                              student.name.toLowerCase().contains(_scanSearchController.text.toLowerCase());
+                        }).map((student) {
+                          final isSelected = _selectedStudentFilters.contains(student.id);
+                          return CheckboxListTile(
+                            title: Text(student.name),
+                            subtitle: Text('ID: ${student.id}'),
+                            value: isSelected,
+                            activeColor: Theme.of(context).colorScheme.secondary,
+                            onChanged: (bool? value) {
+                              setDialogState(() {
+                                if (value == true) {
+                                  _selectedStudentFilters.add(student.id);
+                                } else {
+                                  _selectedStudentFilters.remove(student.id);
+                                }
+                              });
+                              setState(() {}); 
+                              _processChartData(); // Update charts when filter changes
+                            },
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    setDialogState(() {
+                      _selectedStudentFilters.clear();
+                    });
+                    setState(() {});
+                  },
+                  child: Text(l10n.clear, style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color)),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(l10n.close),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
 
   // Scan Statistics State
   int _scansToday = 0;
-  int _scansWeek = 0;
-  int _scansMonth = 0;
+  int _scansCurrentWeek = 0;
+  int _scansRollingWeek = 0;
+  int _scansCurrentMonth = 0;
+  int _scansRollingMonth = 0;
   bool _isLoadingStats = false;
+
+  bool _useRollingWeekStats = false;
+  bool _useRollingMonthStats = false;
+
+  // Double tap logic for calendar
+  DateTime? _lastTapTime;
+  DateTime? _lastTapDay;
+  Timer? _singleTapTimer;
 
   @override
   void initState() {
@@ -102,6 +221,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _singleTapTimer?.cancel();
     _fabController.dispose();
     _adminSearchController.dispose();
     _elevSearchController.dispose();
@@ -116,6 +236,115 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     }
   }
 
+  Future<void> _handleDoubleTap(DateTime date, BuildContext context) async {
+    final l10n = AppLocalizations.of(context)!;
+    // Determine the state of our interval
+    if (_rangeStart != null && _rangeEnd != null) {
+      if (isSameDay(date, _rangeStart)) {
+        // Double tapped the start date
+        final TimeOfDay? picked = await showTimePicker(
+          context: context,
+          initialTime: _startTime,
+          helpText: l10n.startTime,
+        );
+        if (picked != null) {
+          setState(() => _startTime = picked);
+          _fetchScans();
+        }
+      } else if (isSameDay(date, _rangeEnd)) {
+        // Double tapped the end date
+        final TimeOfDay? picked = await showTimePicker(
+          context: context,
+          initialTime: _endTime,
+          helpText: l10n.endTime,
+        );
+        if (picked != null) {
+          setState(() {
+            _endTime = picked;
+          });
+          _fetchScans();
+        }
+      }
+    } else {
+      // It's just a single day selected or no interval selected
+      await _showTwoHoursPickerDialog(context);
+    }
+  }
+
+  Future<void> _showTwoHoursPickerDialog(BuildContext context) async {
+    final l10n = AppLocalizations.of(context)!;
+    TimeOfDay tempStart = _startTime;
+    TimeOfDay tempEnd = _endTime;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: Theme.of(context).cardColor,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Text(l10n.selectTimeInterval),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    leading: Icon(Icons.schedule, color: Theme.of(context).colorScheme.secondary),
+                    title: Text(l10n.startTime),
+                    trailing: Text(tempStart.format(context), style: const TextStyle(fontWeight: FontWeight.bold)),
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: tempStart,
+                        helpText: l10n.startTime,
+                      );
+                      if (picked != null) {
+                        setDialogState(() => tempStart = picked);
+                      }
+                    },
+                  ),
+                  ListTile(
+                    leading: Icon(Icons.event_busy, color: Theme.of(context).colorScheme.secondary),
+                    title: Text(l10n.endTime),
+                    trailing: Text(tempEnd.format(context), style: const TextStyle(fontWeight: FontWeight.bold)),
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: tempEnd,
+                        helpText: l10n.endTime,
+                      );
+                      if (picked != null) {
+                        setDialogState(() => tempEnd = picked);
+                      }
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: Text(l10n.cancel, style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color)),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: Text(l10n.apply),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result == true) {
+      setState(() {
+        _startTime = tempStart;
+        _endTime = tempEnd;
+      });
+      _fetchScans();
+    }
+  }
+
   void _refreshList() {
     setState(() {
       _adminsFuture = _fetchAdmins();
@@ -123,8 +352,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         if (mounted) setState(() {});
       });
       _fetchScans();
-      _fetchWeeklyActivity();
       _fetchScanStatistics();
+      _fetchChartData();
     });
   }
 
@@ -244,63 +473,149 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     }
   }
 
-  Future<void> _fetchWeeklyActivity() async {
-    setState(() {
-      _isLoadingActivity = true;
-    });
-
+  /// Fetches raw scan data (all students) for the selected timeframe.
+  /// Results are cached in [_chartScans] to allow instant re-processing when filters are toggled.
+  Future<void> _fetchChartData() async {
+    setState(() => _isLoadingCharts = true);
     try {
       final now = DateTime.now();
-      // Find Monday of the current week
-      final monday = now.subtract(Duration(days: now.weekday - 1));
-      final startDate = DateTime(monday.year, monday.month, monday.day);
-      // End date is Saturday (exclusive of Friday scan times potentially if not careful,
-      // but scans_by_date logic usually takes start and end.
-      // Let's set end to Saturday 00:00:00 to cover full Friday.
-      final endDate = startDate.add(const Duration(days: 5));
-
-      final response = await _adminService.getScansByDate(
-        widget.token,
-        startDate,
-        endDate,
-      );
-
-      final scans = response.data;
-      final Map<int, Set<int>> dailyStudents = {
-        0: {}, // Mon
-        1: {}, // Tue
-        2: {}, // Wed
-        3: {}, // Thu
-        4: {}, // Fri
-      };
-
-      for (var scan in scans) {
-        // Calculate day index (0=Mon, 4=Fri)
-        // scan.scanTime.weekday: Mon=1, Sun=7
-        final dayIndex = scan.scanTime.weekday - 1;
-        if (dayIndex >= 0 && dayIndex <= 4) {
-          dailyStudents[dayIndex]?.add(scan.idElev);
-        }
+      final today = DateTime(now.year, now.month, now.day);
+      final tomorrow = today.add(const Duration(days: 1));
+      
+      DateTime rangeStart;
+      switch (_chartPeriod) {
+        case ChartPeriod.day:
+          rangeStart = today;
+          break;
+        case ChartPeriod.week:
+          // Rolling Week = last 7 full days. Calendar Week = since Monday.
+          rangeStart = _isChartRolling 
+            ? today.subtract(const Duration(days: 7))
+            : today.subtract(Duration(days: today.weekday - 1));
+          break;
+        case ChartPeriod.month:
+          // Rolling Month = last 30 full days. Calendar Month = since 1st of month.
+          rangeStart = _isChartRolling
+            ? today.subtract(const Duration(days: 30))
+            : DateTime(now.year, now.month, 1);
+          break;
       }
 
-      final List<FlSpot> spots = [];
-      for (int i = 0; i < 5; i++) {
-        spots.add(
-          FlSpot(i.toDouble(), dailyStudents[i]?.length.toDouble() ?? 0),
-        );
-      }
+      // Fetch broad range from API (Server filter is by Date alone)
+      final response = await _adminService.getScansByDate(widget.token, rangeStart, tomorrow);
+      _chartScans = response.data;
 
-      setState(() {
-        _weeklyActivitySpots = spots;
-      });
+      // Transform raw data into visible chart spots/bars
+      _processChartData();
     } catch (e) {
-      print('Error fetching weekly activity: $e');
+      print('Error fetching chart data: $e');
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoadingActivity = false;
-        });
+      if (mounted) setState(() => _isLoadingCharts = false);
+    }
+  }
+
+  /// Organizes the cached [_chartScans] into UI-ready chart data.
+  /// This is called both after fetching and whenever the student filter is updated.
+  void _processChartData() {
+    if (_chartScans == null) return;
+    
+    // Step 1: Filter the cached data by the selected student set
+    final scans = _chartScans!.where((s) => 
+      _selectedStudentFilters.isEmpty || _selectedStudentFilters.contains(s.idElev)
+    ).toList();
+
+    // Step 2: Delegate to daily or multi-day aggregation logic
+    if (_chartPeriod == ChartPeriod.day) {
+      _processDailyChart(scans);
+    } else {
+      _processMultiDayChart(scans);
+    }
+  }
+
+  void _processDailyChart(List<ScanLog> scans) {
+    final spots = <FlSpot>[];
+    final barGroups = <BarChartGroupData>[];
+    final hourlyUnique = Map<int, Set<int>>.fromIterable(
+      List.generate(24, (i) => i), key: (i) => i, value: (_) => {}
+    );
+    final totalCounts = Map<int, int>.fromIterable(
+      List.generate(24, (i) => i), key: (i) => i, value: (_) => 0
+    );
+
+    for (var s in scans) {
+      hourlyUnique[s.scanTime.hour]?.add(s.idElev);
+      totalCounts[s.scanTime.hour] = (totalCounts[s.scanTime.hour] ?? 0) + 1;
+    }
+
+    final accentColor = Theme.of(context).colorScheme.secondary;
+    final rawTotals = <double>[];
+
+    for (int i = 0; i < 24; i++) {
+      final count = totalCounts[i]!.toDouble();
+      spots.add(FlSpot(i.toDouble(), hourlyUnique[i]!.length.toDouble()));
+      rawTotals.add(count);
+      barGroups.add(BarChartGroupData(x: i, barRods: [
+        BarChartRodData(
+          toY: count, 
+          gradient: LinearGradient(
+            colors: [accentColor, accentColor.withOpacity(0.4)],
+            begin: Alignment.bottomCenter,
+            end: Alignment.topCenter,
+          ),
+          width: 8,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+        )
+      ]));
+    }
+    if (mounted) {
+      setState(() {
+        _uniqueStudentsSpots = spots;
+        _totalScansRaw = rawTotals;
+        _totalScansBarGroups = barGroups;
+      });
+    }
+  }
+
+  void _processMultiDayChart(List<ScanLog> scans) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    int days = _chartPeriod == ChartPeriod.week ? (_isChartRolling ? 7 : today.weekday) : (_isChartRolling ? 30 : today.day);
+    
+    final dailyUnique = List.generate(days, (_) => <int>{});
+    final dailyTotal = List.generate(days, (_) => 0);
+    
+    final startDate = _chartPeriod == ChartPeriod.week 
+      ? (_isChartRolling ? today.subtract(const Duration(days: 6)) : today.subtract(Duration(days: today.weekday - 1)))
+      : (_isChartRolling ? today.subtract(const Duration(days: 29)) : DateTime(now.year, now.month, 1));
+
+    for (var s in scans) {
+      final diff = s.scanTime.difference(startDate).inDays;
+      if (diff >= 0 && diff < days) {
+        dailyUnique[diff].add(s.idElev);
+        dailyTotal[diff]++;
       }
+    }
+
+    final accentColor = Theme.of(context).colorScheme.secondary;
+    final rawTotals = List.generate(days, (i) => dailyTotal[i].toDouble());
+
+    if (mounted) {
+      setState(() {
+        _uniqueStudentsSpots = List.generate(days, (i) => FlSpot(i.toDouble(), dailyUnique[i].length.toDouble()));
+        _totalScansRaw = rawTotals;
+        _totalScansBarGroups = List.generate(days, (i) => BarChartGroupData(x: i, barRods: [
+          BarChartRodData(
+            toY: dailyTotal[i].toDouble(), 
+            gradient: LinearGradient(
+              colors: [accentColor, accentColor.withOpacity(0.4)],
+              begin: Alignment.bottomCenter,
+              end: Alignment.topCenter,
+            ),
+            width: 12,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+          )
+        ]));
+      });
     }
   }
 
@@ -313,21 +628,29 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       final tomorrow = today.add(const Duration(days: 1));
-      final weekAgo = today.subtract(const Duration(days: 7));
-      final monthAgo = today.subtract(const Duration(days: 30));
+      
+      final rollingWeekAgo = today.subtract(const Duration(days: 7));
+      final rollingMonthAgo = today.subtract(const Duration(days: 30));
+      
+      final currentWeekStart = today.subtract(Duration(days: today.weekday - 1)); // Monday
+      final currentMonthStart = DateTime(now.year, now.month, 1);
 
       // Fetch all periods in parallel
       final results = await Future.wait([
         _adminService.getScansByDate(widget.token, today, tomorrow),
-        _adminService.getScansByDate(widget.token, weekAgo, tomorrow),
-        _adminService.getScansByDate(widget.token, monthAgo, tomorrow),
+        _adminService.getScansByDate(widget.token, currentWeekStart, tomorrow),
+        _adminService.getScansByDate(widget.token, rollingWeekAgo, tomorrow),
+        _adminService.getScansByDate(widget.token, currentMonthStart, tomorrow),
+        _adminService.getScansByDate(widget.token, rollingMonthAgo, tomorrow),
       ]);
 
       if (mounted) {
         setState(() {
           _scansToday = results[0].data.length;
-          _scansWeek = results[1].data.length;
-          _scansMonth = results[2].data.length;
+          _scansCurrentWeek = results[1].data.length;
+          _scansRollingWeek = results[2].data.length;
+          _scansCurrentMonth = results[3].data.length;
+          _scansRollingMonth = results[4].data.length;
         });
       }
     } catch (e) {
@@ -352,8 +675,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         minChildSize: 0.5,
         maxChildSize: 0.95,
         builder: (_, controller) => Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFFF2F2F7),
+          decoration: BoxDecoration(
+            color: Theme.of(context).scaffoldBackgroundColor,
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: Column(
@@ -395,9 +718,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 child: Container(
                   height: 40,
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: Theme.of(context).cardColor,
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.black.withOpacity(0.05)),
+                    border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.1)),
                   ),
                   child: TextField(
                     controller: _adminSearchController,
@@ -454,7 +777,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                             return Container(
                               margin: const EdgeInsets.only(bottom: 1),
                               decoration: BoxDecoration(
-                                color: Colors.white,
+                                color: Theme.of(context).cardColor,
                                 borderRadius: BorderRadius.vertical(
                                   top: isFirst
                                       ? const Radius.circular(20)
@@ -560,8 +883,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         minChildSize: 0.5,
         maxChildSize: 0.95,
         builder: (_, controller) => Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFFF2F2F7),
+          decoration: BoxDecoration(
+            color: Theme.of(context).scaffoldBackgroundColor,
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: Column(
@@ -602,9 +925,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 child: Container(
                   height: 40,
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: Theme.of(context).cardColor,
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.black.withOpacity(0.05)),
+                    border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.1)),
                   ),
                   child: TextField(
                     controller: _elevSearchController,
@@ -653,7 +976,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                         return Container(
                           margin: const EdgeInsets.only(bottom: 1),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: Theme.of(context).cardColor,
                             borderRadius: BorderRadius.vertical(
                               top: isFirst
                                   ? const Radius.circular(20)
@@ -773,8 +1096,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         minChildSize: 0.5,
         maxChildSize: 0.95,
         builder: (_, controller) => Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFFF2F2F7),
+          decoration: BoxDecoration(
+            color: Theme.of(context).scaffoldBackgroundColor,
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: Column(
@@ -815,9 +1138,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 child: Container(
                   height: 40,
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: Theme.of(context).cardColor,
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.black.withOpacity(0.05)),
+                    border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.1)),
                   ),
                   child: TextField(
                     controller: _elevSearchController,
@@ -866,7 +1189,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                         return Container(
                           margin: const EdgeInsets.only(bottom: 1),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: Theme.of(context).cardColor,
                             borderRadius: BorderRadius.vertical(
                               top: isFirst
                                   ? const Radius.circular(20)
@@ -1036,7 +1359,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                     constraints: const BoxConstraints(maxWidth: 340),
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF2F2F7),
+                      color: Theme.of(context).scaffoldBackgroundColor,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Form(
@@ -1389,7 +1712,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                     constraints: const BoxConstraints(maxWidth: 340),
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF2F2F7),
+                      color: Theme.of(context).scaffoldBackgroundColor,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Form(
@@ -1457,7 +1780,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                                 vertical: 4,
                               ),
                               decoration: BoxDecoration(
-                                color: Colors.white,
+                                color: Theme.of(context).cardColor,
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: SwitchListTile(
@@ -1643,8 +1966,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Listen to theme changes (Accent color, Dark Mode) to ensure charts and UI rebuild immediately
+    final themeProvider = Provider.of<ThemeProvider>(context);
+    final isDarkMode = themeProvider.isDarkMode;
+
     final now = DateTime.now();
-    // Localize date format
+    // Localize date format for the dashboard header
     final l10n = AppLocalizations.of(context)!;
     final dateStr = DateFormat('EEEE, d MMMM', l10n.localeName).format(now);
 
@@ -1827,11 +2154,36 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 )
               else ...[
 
-                // Weekly Activity Chart
+                // Charts Header & Selector
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(88, 24, 24, 24),
+                    padding: const EdgeInsets.fromLTRB(88, 24, 24, 8),
+                    child: Row(
+                      children: [
+                        Text(
+                          l10n.reports,
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Theme.of(context).primaryColor),
+                        ),
+                        const Spacer(),
+                        _buildPeriodSelector(),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Unique Students Chart (Line)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(88, 8, 24, 12),
                     child: _buildActivityChart(),
+                  ),
+                ),
+
+                // Total Scans Chart (Bar/Pillars)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(88, 12, 24, 12),
+                    child: _buildTotalScansChart(),
                   ),
                 ),
 
@@ -1871,7 +2223,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                                       style: TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.bold,
-                                        color: Theme.of(context).primaryColor,
+                                        color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Theme.of(context).primaryColor,
                                       ),
                                     ),
                                     if (_scans != null && _scans!.isNotEmpty)
@@ -1885,6 +2237,25 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                                   ],
                                 ),
                                 const Spacer(),
+                                IconButton(
+                                  icon: Stack(
+                                    children: [
+                                      const Icon(Icons.filter_list, color: Colors.grey),
+                                      if (_selectedStudentFilters.isNotEmpty)
+                                        Positioned(
+                                          right: 0,
+                                          top: 0,
+                                          child: Container(
+                                            width: 8,
+                                            height: 8,
+                                            decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  onPressed: () => _showStudentFilterDialog(context),
+                                ),
+                                const SizedBox(width: 8),
                                 Icon(
                                   _isHistoryExpanded
                                       ? Icons.keyboard_arrow_up
@@ -1969,11 +2340,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                               scanTimeInMinutes <= endTimeInMinutes;
 
                           // Student search filter
-                          final searchQuery = _scanSearchController.text
-                              .toLowerCase();
-                          final matchesSearch =
-                              searchQuery.isEmpty ||
-                              scan.name.toLowerCase().contains(searchQuery);
+                          final matchesSearch = _selectedStudentFilters.isEmpty || 
+                              _selectedStudentFilters.contains(scan.idElev);
 
                           return withinTimeRange && matchesSearch;
                         }).toList();
@@ -2004,7 +2372,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                             return Container(
                               margin: const EdgeInsets.only(bottom: 1),
                               decoration: BoxDecoration(
-                                color: Colors.white,
+                                color: Theme.of(context).cardColor,
                                 borderRadius: BorderRadius.vertical(
                                   top: isFirst
                                       ? const Radius.circular(20)
@@ -2123,9 +2491,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
             studentsCount: _allElevi.length,
             enrolledCount: _currentElevi.length,
             scansToday: _scansToday,
-            scansWeek: _scansWeek,
-
-            scansMonth: _scansMonth,
+            scansWeek: _useRollingWeekStats ? _scansRollingWeek : _scansCurrentWeek,
+            scansMonth: _useRollingMonthStats ? _scansRollingMonth : _scansCurrentMonth,
+            weekLabel: _useRollingWeekStats ? '${l10n.scansWeek} ${l10n.sevenDays}' : '${l10n.scansWeek} ${l10n.thisWeek}',
+            monthLabel: _useRollingMonthStats ? '${l10n.scansMonth} ${l10n.thirtyDays}' : '${l10n.scansMonth} ${l10n.thisMonth}',
+            onTapWeek: () => setState(() => _useRollingWeekStats = !_useRollingWeekStats),
+            onTapMonth: () => setState(() => _useRollingMonthStats = !_useRollingMonthStats),
             onTapProfessors: _showProfessorsListModal,
             onTapStudents: _showStudentsListModal,
             onTapEnrolled: _showEnrolledStudentsModal,
@@ -2164,7 +2535,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                             constraints: const BoxConstraints(maxWidth: 300),
                             padding: const EdgeInsets.all(20),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF2F2F7),
+                              color: Theme.of(context).scaffoldBackgroundColor,
                               borderRadius: BorderRadius.circular(24),
                             ),
                             child: Column(
@@ -2182,7 +2553,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                                 const SizedBox(height: 20),
                                 // Professor option
                                 Material(
-                                  color: Colors.white,
+                                  color: Theme.of(context).cardColor,
                                   borderRadius: const BorderRadius.vertical(
                                     top: Radius.circular(12),
                                   ),
@@ -2242,7 +2613,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                                 ),
                                 // Student option
                                 Material(
-                                  color: Colors.white,
+                                  color: Theme.of(context).cardColor,
                                   borderRadius: const BorderRadius.vertical(
                                     bottom: Radius.circular(12),
                                   ),
@@ -2316,175 +2687,232 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   }
 
 
-  Widget _buildActivityChart() {
+  /// UI Component for toggling between Day, Week, and Month views on the charts.
+  /// Also handles the secondary toggle for "Rolling" vs "Calendar" views.
+  Widget _buildPeriodSelector() {
     final l10n = AppLocalizations.of(context)!;
-
     return Container(
-      padding: const EdgeInsets.all(24),
-      height: 300,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF002B5C).withOpacity(0.1),
-            blurRadius: 40,
-            offset: const Offset(0, 10),
-          ),
-        ],
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.1)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            'Weekly Activity',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
-              letterSpacing: -0.5,
-              color: Theme.of(context).primaryColor,
-            ),
+          // Day Selector
+          _PeriodChip(
+            label: l10n.day,
+            isSelected: _chartPeriod == ChartPeriod.day,
+            onTap: () {
+              setState(() {
+                _chartPeriod = ChartPeriod.day;
+                _isChartRolling = false;
+              });
+              _fetchChartData();
+            },
           ),
-          const SizedBox(height: 4),
-          Text(
-            'Unique Students (Mon-Fri)',
-            style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color, fontSize: 12),
+          // Week Selector (including Rolling Toggle)
+          _PeriodChip(
+            label: _chartPeriod == ChartPeriod.week 
+              ? ( _isChartRolling ? l10n.sevenDays : l10n.thisWeek ) 
+              : l10n.week,
+            isSelected: _chartPeriod == ChartPeriod.week,
+            onTap: () {
+              setState(() {
+                if (_chartPeriod == ChartPeriod.week) {
+                  _isChartRolling = !_isChartRolling; // Toggle rolling mode if already selected
+                } else {
+                  _chartPeriod = ChartPeriod.week;
+                  _isChartRolling = false;
+                }
+              });
+              _fetchChartData();
+            },
           ),
-          const SizedBox(height: 24),
-          Expanded(
-            child: _isLoadingActivity
-                ? const Center(child: CircularProgressIndicator())
-                : LineChart(
-                    LineChartData(
-                      gridData: FlGridData(show: false),
-                      titlesData: FlTitlesData(
-                        bottomTitles: AxisTitles(
-                          sideTitles: SideTitles(
-                            showTitles: true,
-                            reservedSize: 30,
-                            interval: 1,
-                            getTitlesWidget: (value, meta) {
-                              const style = TextStyle(
-                                color: Colors.grey,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                              );
-                              String text;
-                              switch (value.toInt()) {
-                                case 0:
-                                  text = 'Mon';
-                                  break;
-                                case 1:
-                                  text = 'Tue';
-                                  break;
-                                case 2:
-                                  text = 'Wed';
-                                  break;
-                                case 3:
-                                  text = 'Thu';
-                                  break;
-                                case 4:
-                                  text = 'Fri';
-                                  break;
-                                default:
-                                  return Container();
-                              }
-                              return SideTitleWidget(
-                                axisSide: meta.axisSide,
-                                space: 10,
-                                child: Text(text, style: style),
-                              );
-                            },
-                          ),
-                        ),
-                        leftTitles: AxisTitles(
-                          sideTitles: SideTitles(
-                            showTitles: true,
-                            interval: 5, // Adjust interval based on max
-                            getTitlesWidget: (value, meta) {
-                              if (value % 1 != 0)
-                                return Container(); // Only integers
-                              return Text(
-                                value.toInt().toString(),
-                                style: const TextStyle(
-                                  color: Colors.grey,
-                                  fontSize: 12,
-                                ),
-                              );
-                            },
-                            reservedSize: 28,
-                          ),
-                        ),
-                        topTitles: const AxisTitles(
-                          sideTitles: SideTitles(showTitles: false),
-                        ),
-                        rightTitles: const AxisTitles(
-                          sideTitles: SideTitles(showTitles: false),
-                        ),
-                      ),
-                      borderData: FlBorderData(show: false),
-                      minX: 0,
-                      maxX: 4,
-                      minY: 0,
-                      lineBarsData: [
-                        LineChartBarData(
-                          spots: _weeklyActivitySpots.isEmpty
-                              ? [const FlSpot(0, 0)]
-                              : _weeklyActivitySpots,
-                          isCurved: true,
-                          color: Colors.blueAccent,
-                          barWidth: 3,
-                          isStrokeCapRound: true,
-                          dotData: const FlDotData(show: true),
-                          belowBarData: BarAreaData(
-                            show: true,
-                            color: Colors.blueAccent.withOpacity(0.1),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+          // Month Selector (including Rolling Toggle)
+          _PeriodChip(
+            label: _chartPeriod == ChartPeriod.month 
+              ? ( _isChartRolling ? l10n.thirtyDays : l10n.thisMonth ) 
+              : l10n.month,
+            isSelected: _chartPeriod == ChartPeriod.month,
+            onTap: () {
+              setState(() {
+                if (_chartPeriod == ChartPeriod.month) {
+                  _isChartRolling = !_isChartRolling; // Toggle rolling mode if already selected
+                } else {
+                  _chartPeriod = ChartPeriod.month;
+                  _isChartRolling = false;
+                }
+              });
+              _fetchChartData();
+            },
           ),
         ],
       ),
     );
   }
 
-  Widget _buildChartCard({
-    required String title,
-    required Widget child,
-    double width = 200,
-  }) {
-    return Container(
-      width: width,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF002B5C).withOpacity(0.1),
-            blurRadius: 40,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-              letterSpacing: -0.5,
-              color: Color(0xFF002B5C), // Navy Blue
+  Widget _buildActivityChart() {
+    final l10n = AppLocalizations.of(context)!;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isWeekly = _chartPeriod == ChartPeriod.week;
+    final labelColor = isDark ? Colors.white54 : Colors.grey[600];
+    
+    return _ChartBase(
+      title: l10n.weeklyActivity,
+      subtitle: l10n.uniqueStudents,
+      isLoading: _isLoadingCharts,
+      child: LineChart(
+        LineChartData(
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            getDrawingHorizontalLine: (value) => FlLine(
+              color: Theme.of(context).dividerColor.withOpacity(0.05),
+              strokeWidth: 1,
             ),
           ),
-          const SizedBox(height: 16),
-          child,
-        ],
+          titlesData: FlTitlesData(
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 30,
+                interval: 1,
+                getTitlesWidget: (value, meta) {
+                  if (_chartPeriod == ChartPeriod.day) {
+                    if (value.toInt() % 4 != 0) return const SizedBox();
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Text('${value.toInt()}h', style: TextStyle(fontSize: 10, color: labelColor)),
+                    );
+                  }
+                  if (isWeekly && !_isChartRolling) {
+                    final days = [l10n.mon, l10n.tue, l10n.wed, l10n.thu, l10n.fri];
+                    if (value.toInt() >= 0 && value.toInt() < days.length) {
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Text(days[value.toInt()], style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: labelColor)),
+                      );
+                    }
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(
+                      (value.toInt() + 1).toString(),
+                      style: TextStyle(fontSize: 10, color: labelColor),
+                    ),
+                  );
+                },
+              ),
+            ),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 35,
+                interval: 10,
+                getTitlesWidget: (value, meta) => Text(
+                  value.toInt().toString(),
+                  style: TextStyle(fontSize: 10, color: labelColor),
+                ),
+              ),
+            ),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              tooltipBgColor: Theme.of(context).cardColor,
+              getTooltipItems: (touchedSpots) {
+                return touchedSpots.map((spot) {
+                  return LineTooltipItem(
+                    '${spot.y.toInt()} ${l10n.enrolled}',
+                    TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold),
+                  );
+                }).toList();
+              },
+            ),
+          ),
+          borderData: FlBorderData(show: false),
+          lineBarsData: [
+            LineChartBarData(
+              spots: _uniqueStudentsSpots.isEmpty ? [const FlSpot(0, 0)] : _uniqueStudentsSpots,
+              isCurved: true,
+              color: Theme.of(context).colorScheme.secondary,
+              barWidth: 5,
+              isStrokeCapRound: true,
+              dotData: FlDotData(
+                show: true,
+                getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
+                  radius: 4,
+                  color: isDark ? Colors.black : Colors.white,
+                  strokeWidth: 3,
+                  strokeColor: Theme.of(context).colorScheme.secondary,
+                ),
+              ),
+              belowBarData: BarAreaData(
+                show: true,
+                gradient: LinearGradient(
+                  colors: [
+                    Theme.of(context).colorScheme.secondary.withOpacity(0.3),
+                    Theme.of(context).colorScheme.secondary.withOpacity(0.0),
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTotalScansChart() {
+    final l10n = AppLocalizations.of(context)!;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final labelColor = isDark ? Colors.white54 : Colors.grey[600];
+    final accentColor = Theme.of(context).colorScheme.secondary;
+
+    // Use raw values to rebuild groups reactively for accent changes
+    final reactiveGroups = List.generate(_totalScansRaw.length, (i) => BarChartGroupData(x: i, barRods: [
+      BarChartRodData(
+        toY: _totalScansRaw[i], 
+        gradient: LinearGradient(
+          colors: [accentColor, accentColor.withOpacity(0.4)],
+          begin: Alignment.bottomCenter,
+          end: Alignment.topCenter,
+        ),
+        width: _chartPeriod == ChartPeriod.day ? 8 : 12,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+      )
+    ]));
+
+    return _ChartBase(
+      title: l10n.totalScans,
+      subtitle: l10n.all,
+      isLoading: _isLoadingCharts,
+      child: BarChart(
+        BarChartData(
+          gridData: const FlGridData(show: false),
+          titlesData: FlTitlesData(
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 22,
+                getTitlesWidget: (value, meta) {
+                  if (_chartPeriod == ChartPeriod.day) return const SizedBox();
+                  return Text((value.toInt() + 1).toString(), style: TextStyle(fontSize: 8, color: labelColor));
+                },
+              ),
+            ),
+            leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+          borderData: FlBorderData(show: false),
+          barGroups: reactiveGroups.isEmpty ? _totalScansBarGroups : reactiveGroups,
+        ),
       ),
     );
   }
@@ -2501,7 +2929,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -2556,7 +2984,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           ),
           prefixIconConstraints: const BoxConstraints(minWidth: 50),
           filled: true,
-          fillColor: Colors.white,
+          fillColor: Theme.of(context).cardColor,
         ),
         validator: validator,
       ),
@@ -2572,7 +3000,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         // Calendar Widget
         Container(
           decoration: BoxDecoration(
-            color: Colors.grey[50],
+            color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.5),
             borderRadius: BorderRadius.circular(16),
           ),
           padding: const EdgeInsets.all(12),
@@ -2597,291 +3025,191 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
               }
             },
             onDaySelected: (selectedDay, focusedDay) {
-              setState(() {
-                _focusedDay = focusedDay;
+              final now = DateTime.now();
+              if (_lastTapTime != null && 
+                  _lastTapDay != null && 
+                  isSameDay(_lastTapDay, selectedDay) && 
+                  now.difference(_lastTapTime!).inMilliseconds < 400) {
+                _singleTapTimer?.cancel();
+                _handleDoubleTap(selectedDay, context);
+                _lastTapTime = null;
+                return;
+              }
+              _lastTapTime = now;
+              _lastTapDay = selectedDay;
 
-                // Range selection logic
-                if (_rangeStart == null || _rangeEnd != null) {
-                  _rangeStart = selectedDay;
-                  _rangeEnd = null;
-                } else if (selectedDay.isBefore(_rangeStart!)) {
-                  _rangeEnd = _rangeStart;
-                  _rangeStart = selectedDay;
-                } else {
-                  _rangeEnd = selectedDay;
-                }
+              _singleTapTimer?.cancel();
+              _singleTapTimer = Timer(const Duration(milliseconds: 250), () {
+                setState(() {
+                  _focusedDay = focusedDay;
+
+                  // Range selection logic
+                  if (_rangeStart == null || _rangeEnd != null) {
+                    _rangeStart = selectedDay;
+                    _rangeEnd = null;
+                  } else if (selectedDay.isBefore(_rangeStart!)) {
+                    _rangeEnd = _rangeStart;
+                    _rangeStart = selectedDay;
+                  } else {
+                    _rangeEnd = selectedDay;
+                  }
+                });
+                _fetchScans();
               });
-              _fetchScans();
             },
+            onDayLongPressed: (selectedDay, focusedDay) => _handleDoubleTap(selectedDay, context),
             onRangeSelected: (start, end, focusedDay) {
-              setState(() {
-                _focusedDay = focusedDay;
-                _rangeStart = start;
-                _rangeEnd = end;
+              final selectedDay = end ?? start;
+              if (selectedDay != null) {
+                final now = DateTime.now();
+                if (_lastTapTime != null && 
+                    _lastTapDay != null && 
+                    isSameDay(_lastTapDay, selectedDay) && 
+                    now.difference(_lastTapTime!).inMilliseconds < 400) {
+                  _singleTapTimer?.cancel();
+                  _handleDoubleTap(selectedDay, context);
+                  _lastTapTime = null;
+                  return;
+                }
+                _lastTapTime = now;
+                _lastTapDay = selectedDay;
+              }
+
+              _singleTapTimer?.cancel();
+              _singleTapTimer = Timer(const Duration(milliseconds: 250), () {
+                setState(() {
+                  _focusedDay = focusedDay;
+                  _rangeStart = start;
+                  _rangeEnd = end;
+                });
+                _fetchScans();
               });
-              _fetchScans();
             },
             calendarStyle: CalendarStyle(
-              rangeHighlightColor: Colors.blue.withOpacity(0.2),
-              rangeStartDecoration: const BoxDecoration(
-                color: Colors.blue,
+              rangeHighlightColor: Theme.of(context).colorScheme.secondary.withOpacity(0.2),
+              rangeStartDecoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.secondary,
                 shape: BoxShape.circle,
               ),
-              rangeEndDecoration: const BoxDecoration(
-                color: Colors.blue,
+              rangeEndDecoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.secondary,
                 shape: BoxShape.circle,
               ),
-              selectedDecoration: const BoxDecoration(
-                color: Colors.blue,
+              selectedDecoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.secondary,
                 shape: BoxShape.circle,
               ),
               todayDecoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.3),
+                color: Theme.of(context).colorScheme.secondary.withOpacity(0.3),
                 shape: BoxShape.circle,
               ),
               withinRangeDecoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
+                color: Theme.of(context).colorScheme.secondary.withOpacity(0.1),
                 shape: BoxShape.circle,
               ),
             ),
-            headerStyle: const HeaderStyle(
+            headerStyle: HeaderStyle(
               formatButtonVisible: false,
               titleCentered: true,
-              leftChevronIcon: Icon(Icons.chevron_left, color: Colors.blue),
-              rightChevronIcon: Icon(Icons.chevron_right, color: Colors.blue),
+              leftChevronIcon: Icon(Icons.chevron_left, color: Theme.of(context).colorScheme.secondary),
+              rightChevronIcon: Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.secondary),
             ),
           ),
         ),
 
         const SizedBox(height: 16),
-
-        // Time Interval Selector
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.grey[50],
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Time Interval',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey[700],
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // Quick preset buttons
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _buildTimePresetChip(
-                    'Morning (08:00-12:00)',
-                    const TimeOfDay(hour: 8, minute: 0),
-                    const TimeOfDay(hour: 12, minute: 0),
-                  ),
-                  _buildTimePresetChip(
-                    'Afternoon (12:00-16:00)',
-                    const TimeOfDay(hour: 12, minute: 0),
-                    const TimeOfDay(hour: 16, minute: 0),
-                  ),
-                  _buildTimePresetChip(
-                    'Full Day (08:00-16:00)',
-                    const TimeOfDay(hour: 8, minute: 0),
-                    const TimeOfDay(hour: 16, minute: 0),
-                  ),
-                  _buildTimePresetChip(
-                    'All Day (00:00-23:59)',
-                    const TimeOfDay(hour: 0, minute: 0),
-                    const TimeOfDay(hour: 23, minute: 59),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-
-              // Custom time selection using easier Dropdowns
-              Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey[300]!),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.schedule,
-                            size: 18,
-                            color: Colors.blue,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<int>(
-                                value: _startTime.hour,
-                                isExpanded: true,
-                                icon: const Icon(Icons.arrow_drop_down),
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.black87,
-                                ),
-                                onChanged: (int? newValue) {
-                                  if (newValue != null) {
-                                    setState(() {
-                                      _startTime = TimeOfDay(hour: newValue, minute: 0);
-                                    });
-                                    _fetchScans();
-                                  }
-                                },
-                                items: List.generate(24, (index) {
-                                  final displayHour = index.toString().padLeft(2, '0');
-                                  return DropdownMenuItem<int>(
-                                    value: index,
-                                    child: Text('Start: $displayHour:00'),
-                                  );
-                                }),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey[300]!),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.schedule,
-                            size: 18,
-                            color: Colors.blue,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<int>(
-                                value: _endTime.hour == 23 && _endTime.minute == 59 ? 24 : _endTime.hour,
-                                isExpanded: true,
-                                icon: const Icon(Icons.arrow_drop_down),
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.black87,
-                                ),
-                                onChanged: (int? newValue) {
-                                  if (newValue != null) {
-                                    setState(() {
-                                      if (newValue == 24) {
-                                        _endTime = const TimeOfDay(hour: 23, minute: 59);
-                                      } else {
-                                        _endTime = TimeOfDay(hour: newValue, minute: 0);
-                                      }
-                                    });
-                                    _fetchScans();
-                                  }
-                                },
-                                items: List.generate(25, (index) {
-                                  if (index == 24) {
-                                    return const DropdownMenuItem<int>(
-                                      value: 24,
-                                      child: Text('End: 23:59'),
-                                    );
-                                  }
-                                  final displayHour = index.toString().padLeft(2, '0');
-                                  return DropdownMenuItem<int>(
-                                    value: index,
-                                    child: Text('End: $displayHour:00'),
-                                  );
-                                }),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 16),
-
-        // Student Search Bar
-        Container(
-          height: 45,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[300]!),
-          ),
-          child: TextField(
-            controller: _scanSearchController,
-            onChanged: (value) {
-              setState(() {}); // Trigger rebuild for filtering
-            },
-            decoration: InputDecoration(
-              hintText: 'Search by student name...',
-              hintStyle: TextStyle(fontSize: 14, color: Colors.grey[400]),
-              prefixIcon: Icon(Icons.search, size: 20, color: Colors.grey[400]),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(vertical: 12),
-              isDense: true,
-            ),
-          ),
-        ),
+        // Removed Student Search Bar (now handled by advanced Filter button)
       ],
     );
   }
+}
 
-  Widget _buildTimePresetChip(String label, TimeOfDay start, TimeOfDay end) {
-    final isSelected = _startTime == start && _endTime == end;
+class _ChartBase extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final Widget child;
+  final bool isLoading;
 
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _startTime = start;
-          _endTime = end;
-        });
-        _fetchScans();
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.blue : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? Colors.blue : Colors.grey[300]!,
+  const _ChartBase({required this.title, required this.subtitle, required this.child, this.isLoading = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    return Container(
+      padding: const EdgeInsets.all(24),
+      height: 320,
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Theme.of(context).primaryColor.withOpacity(0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
           ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title, 
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold, 
+                      fontSize: 16, 
+                      color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Theme.of(context).primaryColor,
+                    ),
+                  ),
+                  Text(
+                    subtitle, 
+                    style: TextStyle(
+                      fontSize: 12, 
+                      color: isDark ? Colors.white54 : Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+              if (isLoading) const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
+}
+
+class _PeriodChip extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _PeriodChip({required this.label, required this.isSelected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? Theme.of(context).primaryColor : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
         ),
         child: Text(
           label,
           style: TextStyle(
-            fontSize: 12,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-            color: isSelected ? Colors.white : Colors.black87,
+            fontSize: 13,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            color: isSelected ? Colors.white : Theme.of(context).textTheme.bodyMedium?.color,
           ),
         ),
       ),

@@ -246,4 +246,94 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get enrolled => 'Enrolled';
+
+  @override
+  String get selectTimeInterval => 'Select Time Interval';
+
+  @override
+  String get startTime => 'Start Time';
+
+  @override
+  String get endTime => 'End Time';
+
+  @override
+  String get apply => 'Apply';
+
+  @override
+  String get sevenDays => '(7 Days)';
+
+  @override
+  String get thirtyDays => '(30 Days)';
+
+  @override
+  String get thisWeek => '(This Week)';
+
+  @override
+  String get thisMonth => '(This Month)';
+
+  @override
+  String get searchByStudentName => 'Search by student name...';
+
+  @override
+  String get weeklyActivity => 'Weekly Activity';
+
+  @override
+  String get mon => 'Mon';
+
+  @override
+  String get tue => 'Tue';
+
+  @override
+  String get wed => 'Wed';
+
+  @override
+  String get thu => 'Thu';
+
+  @override
+  String get fri => 'Fri';
+
+  @override
+  String get lightMode => 'Light Mode';
+
+  @override
+  String get darkMode => 'Dark Mode';
+
+  @override
+  String get blueAccent => 'Blue Accent';
+
+  @override
+  String get yellowAccent => 'Yellow Accent';
+
+  @override
+  String get uniqueStudents => 'Unique Students (Mon-Fri)';
+
+  @override
+  String get filterStudents => 'Filter Students';
+
+  @override
+  String get close => 'Close';
+
+  @override
+  String get day => 'Day';
+
+  @override
+  String get week => 'Week';
+
+  @override
+  String get month => 'Month';
+
+  @override
+  String get rolling => 'Rolling';
+
+  @override
+  String get calendar => 'Calendar';
+
+  @override
+  String get totalScans => 'Total Scans';
+
+  @override
+  String get hourlyDistribution => 'Hourly Distribution';
+
+  @override
+  String get scansPerHour => 'Scans per Hour';
 }

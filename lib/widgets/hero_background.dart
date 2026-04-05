@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'dart:math' as math;
+import 'package:provider/provider.dart';
+import '../providers/theme_provider.dart';
 
 class HeroBackground extends StatefulWidget {
   final double height;
@@ -31,16 +33,32 @@ class _HeroBackgroundState extends State<HeroBackground>
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final themeProvider = Provider.of<ThemeProvider>(context);
+    final isYellow = themeProvider.accentColorType == AccentColorType.yellow;
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
+    // Define consistent color sets
+    final Color darkBlue = isDarkMode ? const Color(0xFF000814) : const Color(0xFF001A3D);
+    final Color lightBlue = isDarkMode ? Colors.blue[300]!.withOpacity(0.5) : Colors.blue[100]!;
+    final Color darkYellow = isDarkMode ? const Color(0xFFB8860B) : const Color(0xFF996600);
+    final Color lightYellow = isDarkMode ? Colors.amber[200]!.withOpacity(0.5) : Colors.amber[100]!;
+    final Color accentGold = isDarkMode ? Colors.amber[400]! : const Color(0xFFB8860B);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeInOut,
       height: widget.height,
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+          transform: const GradientRotation(math.pi / 6), // 30 degrees right
           colors: [
-            Theme.of(context).primaryColor,
-            Theme.of(context).colorScheme.secondary,
+            darkBlue,                             // Outside left
+            isYellow ? lightBlue : lightYellow,   // Mid-left (complementary)
+            isYellow ? lightYellow : lightBlue,   // Center (accent)
+            isYellow ? lightBlue : lightYellow,   // Mid-right (complementary)
+            darkBlue,                             // Outside right
           ],
+          stops: const [0.0, 0.3, 0.5, 0.7, 1.0],
         ),
       ),
       child: Stack(
@@ -48,7 +66,7 @@ class _HeroBackgroundState extends State<HeroBackground>
           // Grid Overlay
           Positioned.fill(
             child: CustomPaint(
-              painter: _GridPainter(),
+              painter: _GridPainter(isDarkMode: isDarkMode),
             ),
           ),
           // Floating Text Animation (CNVGA)
@@ -57,7 +75,7 @@ class _HeroBackgroundState extends State<HeroBackground>
               animation: _controller,
               builder: (context, child) {
                 return CustomPaint(
-                  painter: _FloatingTextPainter(progress: _controller.value),
+                  painter: _FloatingTextPainter(progress: _controller.value, isDarkMode: isDarkMode),
                 );
               },
             ),
@@ -69,10 +87,13 @@ class _HeroBackgroundState extends State<HeroBackground>
 }
 
 class _GridPainter extends CustomPainter {
+  final bool isDarkMode;
+  _GridPainter({required this.isDarkMode});
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.white.withOpacity(0.05)
+      ..color = isDarkMode ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.05)
       ..strokeWidth = 1.0;
 
     const double step = 40.0;
@@ -98,12 +119,14 @@ class _GridPainter extends CustomPainter {
 
 class _FloatingTextPainter extends CustomPainter {
   final double progress;
-  _FloatingTextPainter({required this.progress});
+  final bool isDarkMode;
+  _FloatingTextPainter({required this.progress, required this.isDarkMode});
 
   @override
   void paint(Canvas canvas, Size size) {
+    final textColor = isDarkMode ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.08);
     final textStyle = TextStyle(
-      color: Colors.white.withOpacity(0.08),
+      color: textColor,
       fontSize: 54,
       fontWeight: FontWeight.bold,
       letterSpacing: 20,

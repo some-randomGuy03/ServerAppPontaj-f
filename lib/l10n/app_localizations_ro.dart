@@ -18,7 +18,7 @@ class AppLocalizationsRo extends AppLocalizations {
   String get users => 'Utilizatori';
 
   @override
-  String get settings => 'Setari';
+  String get settings => 'Setări';
 
   @override
   String get logout => 'Deconectare';
@@ -30,23 +30,23 @@ class AppLocalizationsRo extends AppLocalizations {
   String get email => 'Email';
 
   @override
-  String get password => 'Parola';
+  String get password => 'Parolă';
 
   @override
-  String get loginButton => 'Intra in Cont';
+  String get loginButton => 'Conectare';
 
   @override
-  String get language => 'Limba';
+  String get language => 'Limbă';
 
   @override
-  String get selectLanguage => 'Selecteaza Limba';
+  String get selectLanguage => 'Selectați Limba';
 
   @override
   String get welcomeBack => 'Bine ai revenit';
 
   @override
   String get signInMessage =>
-      'Te rugam sa te autentifici pentru a accesa portalul.';
+      'Vă rugăm să vă autentificați pentru a accesa portalul admin.';
 
   @override
   String get requiredField => 'Obligatoriu';
@@ -61,13 +61,14 @@ class AppLocalizationsRo extends AppLocalizations {
   String get noDataToExport => 'Nu există date de exportat';
 
   @override
-  String get statsExportedSuccess => 'Statistici exportate în CSV cu succes';
+  String get statsExportedSuccess =>
+      'Statisticile au fost exportate în CSV cu succes';
 
   @override
-  String get editProfessor => 'Editează Profesor';
+  String get editProfessor => 'Editare Profesor';
 
   @override
-  String get addProfessor => 'Adaugă Profesor';
+  String get addProfessor => 'Adăugare Profesor';
 
   @override
   String get name => 'Nume';
@@ -77,7 +78,7 @@ class AppLocalizationsRo extends AppLocalizations {
 
   @override
   String get emailInvalid =>
-      'Email-ul trebuie să fie în formatul: user@domain.com';
+      'Email-ul trebuie să fie în format: utilizator@domeniu.com';
 
   @override
   String get newPassword => 'Parolă Nouă';
@@ -90,20 +91,20 @@ class AppLocalizationsRo extends AppLocalizations {
       'Parola trebuie să aibă cel puțin 6 caractere';
 
   @override
-  String get cancel => 'Anulează';
+  String get cancel => 'Anulare';
 
   @override
-  String get save => 'Salvează';
+  String get save => 'Salvare';
 
   @override
   String get add => 'Adaugă';
 
   @override
-  String get confirmDelete => 'Confirmă Ștergerea';
+  String get confirmDelete => 'Confirmare Ștergere';
 
   @override
   String deleteConfirmation(String name) {
-    return 'Ești sigur că vrei să ștergi pe $name?';
+    return 'Sigur doriți să ștergeți pe $name?';
   }
 
   @override
@@ -125,7 +126,7 @@ class AppLocalizationsRo extends AppLocalizations {
   String get total => 'Total';
 
   @override
-  String get idGrowth => 'Creștere ID (Activitate)';
+  String get idGrowth => 'Evoluție ID (Activitate)';
 
   @override
   String get systemStatus => 'Stare Sistem';
@@ -138,46 +139,46 @@ class AppLocalizationsRo extends AppLocalizations {
 
   @override
   String get clearLogsConfirmation =>
-      'Ești sigur că vrei să ștergi toate jurnalele?';
+      'Sigur doriți să ștergeți toate jurnalele?';
 
   @override
   String get clear => 'Șterge';
 
   @override
-  String get searchLogs => 'Caută Jurnale';
+  String get searchLogs => 'Căutare Jurnale';
 
   @override
   String get all => 'Toate';
 
   @override
-  String get withInput => 'Cu Intrare';
+  String get withInput => 'Cu Input';
 
   @override
-  String get withOutput => 'Cu Ieșire';
+  String get withOutput => 'Cu Output';
 
   @override
-  String get stackTraces => 'Urme Stivă';
+  String get stackTraces => 'Stack Traces';
 
   @override
   String get noLogsMatch => 'Niciun jurnal nu corespunde filtrelor';
 
   @override
-  String get noLogsYet => 'Niciun jurnal încă';
+  String get noLogsYet => 'Nu există jurnale încă';
 
   @override
-  String get input => 'Intrare';
+  String get input => 'Input';
 
   @override
-  String get output => 'Ieșire';
+  String get output => 'Output';
 
   @override
-  String get trace => 'URMĂ';
+  String get trace => 'TRACE';
 
   @override
   String get fullMessage => 'Mesaj Complet';
 
   @override
-  String get stackTrace => 'Urmă Stivă';
+  String get stackTrace => 'Stack Trace';
 
   @override
   String copied(String title) {
@@ -197,13 +198,13 @@ class AppLocalizationsRo extends AppLocalizations {
   String get addStudent => 'Adaugă Elev';
 
   @override
-  String get editStudent => 'Editează Elev';
+  String get editStudent => 'Editare Elev';
 
   @override
   String get studentCode => 'Cod Matricol';
 
   @override
-  String get activeStatus => 'Status Activ';
+  String get activeStatus => 'Stare Activ';
 
   @override
   String get active => 'Activ';
@@ -224,19 +225,19 @@ class AppLocalizationsRo extends AppLocalizations {
   String get enrolledStudents => 'Elevi Înscriși';
 
   @override
-  String get dateRange => 'Interval Dată';
+  String get dateRange => 'Interval Date';
 
   @override
   String get noScansFound => 'Nu s-au găsit scanări pentru această perioadă';
 
   @override
-  String get noEnrolledStudents => 'Niciun elev înscris';
+  String get noEnrolledStudents => 'Nu există elevi înscriși';
 
   @override
   String get scansToday => 'Scanări Azi';
 
   @override
-  String get scansWeek => 'Scanări Săptămână';
+  String get scansWeek => 'Scanări Săpt.';
 
   @override
   String get scansTwoWeeks => 'Scanări 2 Săpt.';
@@ -248,5 +249,95 @@ class AppLocalizationsRo extends AppLocalizations {
   String get studentsScanned => 'elevi scanați';
 
   @override
-  String get enrolled => 'Înscriși';
+  String get enrolled => 'Înrolat';
+
+  @override
+  String get selectTimeInterval => 'Selectați Intervalul Orar';
+
+  @override
+  String get startTime => 'Ora Start';
+
+  @override
+  String get endTime => 'Ora Sfârșit';
+
+  @override
+  String get apply => 'Aplică';
+
+  @override
+  String get sevenDays => '(7 Zile)';
+
+  @override
+  String get thirtyDays => '(30 Zile)';
+
+  @override
+  String get thisWeek => '(Săptămâna aceasta)';
+
+  @override
+  String get thisMonth => '(Luna aceasta)';
+
+  @override
+  String get searchByStudentName => 'Caută după nume elev...';
+
+  @override
+  String get weeklyActivity => 'Activitate Săptămânală';
+
+  @override
+  String get mon => 'Lun';
+
+  @override
+  String get tue => 'Mar';
+
+  @override
+  String get wed => 'Mie';
+
+  @override
+  String get thu => 'Joi';
+
+  @override
+  String get fri => 'Vin';
+
+  @override
+  String get lightMode => 'Mod Luminos';
+
+  @override
+  String get darkMode => 'Mod Intunecat';
+
+  @override
+  String get blueAccent => 'Accent Albastru';
+
+  @override
+  String get yellowAccent => 'Accent Galben';
+
+  @override
+  String get uniqueStudents => 'Elevi Unici (Lun-Vin)';
+
+  @override
+  String get filterStudents => 'Filtrează Elevi';
+
+  @override
+  String get close => 'Închide';
+
+  @override
+  String get day => 'Zi';
+
+  @override
+  String get week => 'Săptămână';
+
+  @override
+  String get month => 'Lună';
+
+  @override
+  String get rolling => 'Mobil';
+
+  @override
+  String get calendar => 'Calendar';
+
+  @override
+  String get totalScans => 'Total Scanări';
+
+  @override
+  String get hourlyDistribution => 'Distribuție Orară';
+
+  @override
+  String get scansPerHour => 'Scanări pe Oră';
 }
