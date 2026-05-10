@@ -39,9 +39,9 @@ class _HeroBackgroundState extends State<HeroBackground>
 
     // Define consistent color sets
     final Color darkBlue = isDarkMode ? const Color(0xFF000814) : const Color(0xFF001A3D);
-    final Color lightBlue = isDarkMode ? Colors.blue[300]!.withOpacity(0.5) : Colors.blue[100]!;
+    final Color lightBlue = isDarkMode ? Colors.blue[400]!.withOpacity(0.8) : Colors.blue[200]!;
     final Color darkYellow = isDarkMode ? const Color(0xFFB8860B) : const Color(0xFF996600);
-    final Color lightYellow = isDarkMode ? Colors.amber[200]!.withOpacity(0.5) : Colors.amber[100]!;
+    final Color lightYellow = isDarkMode ? Colors.amber[300]!.withOpacity(0.8) : Colors.amber[200]!;
     final Color accentGold = isDarkMode ? Colors.amber[400]! : const Color(0xFFB8860B);
 
     return AnimatedContainer(
@@ -58,7 +58,7 @@ class _HeroBackgroundState extends State<HeroBackground>
             isYellow ? lightBlue : lightYellow,   // Mid-right (complementary)
             darkBlue,                             // Outside right
           ],
-          stops: const [0.0, 0.3, 0.5, 0.7, 1.0],
+          stops: const [0.0, 0.4, 0.5, 0.6, 1.0],
         ),
       ),
       child: Stack(
@@ -127,12 +127,12 @@ class _FloatingTextPainter extends CustomPainter {
     final textColor = isDarkMode ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.08);
     final textStyle = TextStyle(
       color: textColor,
-      fontSize: 54,
+      fontSize: 36,
       fontWeight: FontWeight.bold,
-      letterSpacing: 20,
+      letterSpacing: 10,
     );
     final textSpan = TextSpan(
-      text: 'CNVGA  CNVGA  CNVGA  CNVGA  CNVGA  CNVGA  CNVGA',
+      text: 'CNVGA  CNVGA  CNVGA  CNVGA  CNVGA  CNVGA  CNVGA  CNVGA  CNVGA  CNVGA  CNVGA',
       style: textStyle,
     );
     final textPainter = TextPainter(
@@ -147,7 +147,7 @@ class _FloatingTextPainter extends CustomPainter {
     final rect = Offset.zero & size;
     final gradient = RadialGradient(
       center: Alignment.center,
-      radius: 1.8,
+      radius: 1.2,
       colors: [Colors.black, Colors.transparent],
     ).createShader(rect);
     final paint = Paint()..shader = gradient..blendMode = BlendMode.dstIn;
@@ -158,10 +158,10 @@ class _FloatingTextPainter extends CustomPainter {
     
     // Conveyor belt effect
     final double offset = -(progress * textPainter.width * 0.5);
-    for (int i = -4; i < 12; i++) {
+    for (int i = -4; i < 20; i++) {
         textPainter.paint(
           canvas,
-          Offset(offset, i * 110.0 - 150),
+          Offset(offset, i * 65.0 - 150),
         );
     }
     

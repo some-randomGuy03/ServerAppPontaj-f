@@ -22,6 +22,7 @@ import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
 import 'login_screen.dart';
 import 'debug_screen.dart';
+import 'student_reports_screen.dart';
 
 enum ChartPeriod { day, week, month }
 
@@ -62,7 +63,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   DateTime _focusedDay = DateTime.now();
   DateTime? _rangeStart;
   DateTime? _rangeEnd;
-  RangeSelectionMode _rangeSelectionMode = RangeSelectionMode.toggledOn;
+  RangeSelectionMode _rangeSelectionMode = RangeSelectionMode.toggledOff;
 
   // Time interval filtering
   TimeOfDay _startTime = const TimeOfDay(hour: 0, minute: 0);
@@ -81,15 +82,32 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
   // Chart state
   // --- Analytics Chart State ---
-  ChartPeriod _chartPeriod = ChartPeriod.week; // Current timeframe: Day, Week, or Month
+  ChartPeriod _chartPeriod = ChartPeriod.week; // Keep for preset state
   bool _isChartRolling = false; // Toggle: Start of period (Calendar) vs Last X days (Rolling)
   List<ScanLog>? _chartScans; // Cached raw analysis data from the last API call
   bool _isLoadingCharts = false; // Spinner flag for async data fetching
   List<FlSpot> _uniqueStudentsSpots = []; // Prepared coordinate points for the unique students line chart
   List<double> _totalScansRaw = []; // Raw aggregation values for the pillar chart (Reactive)
   List<BarChartGroupData> _totalScansBarGroups = []; // Prepared bar groups for the total pillar chart
-  List<BarChartGroupData> _hourlyDistributionBarGroups = []; // Prepared groups for the activity heatmap
+  String _currentChartMode = 'daily'; // 'hourly', 'daily', 'weekly', 'monthly'
 
+  String _getSelectedDateText() {
+    String formatTime(TimeOfDay time) {
+      final h = time.hour.toString().padLeft(2, '0');
+      final m = time.minute.toString().padLeft(2, '0');
+      return "$h:$m";
+    }
+
+    final hasCustomTime = _startTime.hour != 0 || _startTime.minute != 0 || _endTime.hour != 23 || _endTime.minute != 59;
+    final timeStr = hasCustomTime ? " (${formatTime(_startTime)} - ${formatTime(_endTime)})" : "";
+
+    if (_rangeStart != null && _rangeEnd != null) {
+      return "${DateFormat('MMM d').format(_rangeStart!)} - ${DateFormat('MMM d').format(_rangeEnd!)}$timeStr";
+    } else if (_rangeStart != null) {
+      return "${DateFormat('MMM d, yyyy').format(_rangeStart!)}$timeStr";
+    }
+    return "This Month";
+  }
 
   void _showStudentFilterDialog(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -473,36 +491,27 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     }
   }
 
-  /// Fetches raw scan data (all students) for the selected timeframe.
-  /// Results are cached in [_chartScans] to allow instant re-processing when filters are toggled.
   Future<void> _fetchChartData() async {
     setState(() => _isLoadingCharts = true);
     try {
       final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      final tomorrow = today.add(const Duration(days: 1));
       
-      DateTime rangeStart;
-      switch (_chartPeriod) {
-        case ChartPeriod.day:
-          rangeStart = today;
-          break;
-        case ChartPeriod.week:
-          // Rolling Week = last 7 full days. Calendar Week = since Monday.
-          rangeStart = _isChartRolling 
-            ? today.subtract(const Duration(days: 7))
-            : today.subtract(Duration(days: today.weekday - 1));
-          break;
-        case ChartPeriod.month:
-          // Rolling Month = last 30 full days. Calendar Month = since 1st of month.
-          rangeStart = _isChartRolling
-            ? today.subtract(const Duration(days: 30))
-            : DateTime(now.year, now.month, 1);
-          break;
+      DateTime startDate;
+      DateTime endDate;
+
+      if (_rangeStart != null && _rangeEnd != null) {
+        startDate = DateTime(_rangeStart!.year, _rangeStart!.month, _rangeStart!.day);
+        endDate = DateTime(_rangeEnd!.year, _rangeEnd!.month, _rangeEnd!.day).add(const Duration(days: 1));
+      } else if (_rangeStart != null) {
+        startDate = DateTime(_rangeStart!.year, _rangeStart!.month, _rangeStart!.day);
+        endDate = startDate.add(const Duration(days: 1));
+      } else {
+        startDate = DateTime(_focusedDay.year, _focusedDay.month, 1);
+        endDate = DateTime(_focusedDay.year, _focusedDay.month + 1, 1);
       }
 
-      // Fetch broad range from API (Server filter is by Date alone)
-      final response = await _adminService.getScansByDate(widget.token, rangeStart, tomorrow);
+      // Fetch broad range from API
+      final response = await _adminService.getScansByDate(widget.token, startDate, endDate);
       _chartScans = response.data;
 
       // Transform raw data into visible chart spots/bars
@@ -514,37 +523,62 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     }
   }
 
-  /// Organizes the cached [_chartScans] into UI-ready chart data.
-  /// This is called both after fetching and whenever the student filter is updated.
   void _processChartData() {
     if (_chartScans == null) return;
     
-    // Step 1: Filter the cached data by the selected student set
-    final scans = _chartScans!.where((s) => 
-      _selectedStudentFilters.isEmpty || _selectedStudentFilters.contains(s.idElev)
-    ).toList();
+    final scans = _chartScans!.where((s) {
+      if (_selectedStudentFilters.isNotEmpty && !_selectedStudentFilters.contains(s.idElev)) {
+        return false;
+      }
+      final scanTimeInMinutes = s.scanTime.hour * 60 + s.scanTime.minute;
+      final startTimeInMinutes = _startTime.hour * 60 + _startTime.minute;
+      final endTimeInMinutes = _endTime.hour * 60 + _endTime.minute;
+      return scanTimeInMinutes >= startTimeInMinutes && scanTimeInMinutes <= endTimeInMinutes;
+    }).toList();
 
-    // Step 2: Delegate to daily or multi-day aggregation logic
-    if (_chartPeriod == ChartPeriod.day) {
-      _processDailyChart(scans);
+    DateTime sDate;
+    DateTime eDate;
+
+    if (_rangeStart != null && _rangeEnd != null) {
+      sDate = DateTime(_rangeStart!.year, _rangeStart!.month, _rangeStart!.day);
+      eDate = DateTime(_rangeEnd!.year, _rangeEnd!.month, _rangeEnd!.day).add(const Duration(days: 1));
+    } else if (_rangeStart != null) {
+      sDate = DateTime(_rangeStart!.year, _rangeStart!.month, _rangeStart!.day);
+      eDate = sDate.add(const Duration(days: 1));
     } else {
-      _processMultiDayChart(scans);
+      sDate = DateTime(_focusedDay.year, _focusedDay.month, 1);
+      eDate = DateTime(_focusedDay.year, _focusedDay.month + 1, 1);
+    }
+
+    final duration = eDate.difference(sDate);
+    final days = duration.inDays;
+
+    if (days <= 1) {
+      _currentChartMode = 'hourly';
+      _processChartByHour(scans, sDate);
+    } else if (days <= 60) {
+      _currentChartMode = 'daily';
+      _processChartByDay(scans, sDate, days);
+    } else if (days <= 180) {
+      _currentChartMode = 'weekly';
+      _processChartByWeek(scans, sDate, eDate);
+    } else {
+      _currentChartMode = 'monthly';
+      _processChartByMonth(scans, sDate, eDate);
     }
   }
 
-  void _processDailyChart(List<ScanLog> scans) {
+  void _processChartByHour(List<ScanLog> scans, DateTime startDate) {
     final spots = <FlSpot>[];
     final barGroups = <BarChartGroupData>[];
-    final hourlyUnique = Map<int, Set<int>>.fromIterable(
-      List.generate(24, (i) => i), key: (i) => i, value: (_) => {}
-    );
-    final totalCounts = Map<int, int>.fromIterable(
-      List.generate(24, (i) => i), key: (i) => i, value: (_) => 0
-    );
+    final hourlyUnique = Map<int, Set<int>>.fromIterable(List.generate(24, (i) => i), key: (i) => i, value: (_) => {});
+    final totalCounts = Map<int, int>.fromIterable(List.generate(24, (i) => i), key: (i) => i, value: (_) => 0);
 
     for (var s in scans) {
-      hourlyUnique[s.scanTime.hour]?.add(s.idElev);
-      totalCounts[s.scanTime.hour] = (totalCounts[s.scanTime.hour] ?? 0) + 1;
+      if (s.scanTime.year == startDate.year && s.scanTime.month == startDate.month && s.scanTime.day == startDate.day) {
+        hourlyUnique[s.scanTime.hour]?.add(s.idElev);
+        totalCounts[s.scanTime.hour] = (totalCounts[s.scanTime.hour] ?? 0) + 1;
+      }
     }
 
     final accentColor = Theme.of(context).colorScheme.secondary;
@@ -557,11 +591,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       barGroups.add(BarChartGroupData(x: i, barRods: [
         BarChartRodData(
           toY: count, 
-          gradient: LinearGradient(
-            colors: [accentColor, accentColor.withOpacity(0.4)],
-            begin: Alignment.bottomCenter,
-            end: Alignment.topCenter,
-          ),
+          gradient: LinearGradient(colors: [accentColor, accentColor.withOpacity(0.4)], begin: Alignment.bottomCenter, end: Alignment.topCenter),
           width: 8,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
         )
@@ -576,20 +606,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     }
   }
 
-  void _processMultiDayChart(List<ScanLog> scans) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    int days = _chartPeriod == ChartPeriod.week ? (_isChartRolling ? 7 : today.weekday) : (_isChartRolling ? 30 : today.day);
-    
+  void _processChartByDay(List<ScanLog> scans, DateTime startDate, int days) {
     final dailyUnique = List.generate(days, (_) => <int>{});
     final dailyTotal = List.generate(days, (_) => 0);
     
-    final startDate = _chartPeriod == ChartPeriod.week 
-      ? (_isChartRolling ? today.subtract(const Duration(days: 6)) : today.subtract(Duration(days: today.weekday - 1)))
-      : (_isChartRolling ? today.subtract(const Duration(days: 29)) : DateTime(now.year, now.month, 1));
-
     for (var s in scans) {
-      final diff = s.scanTime.difference(startDate).inDays;
+      final diff = DateTime(s.scanTime.year, s.scanTime.month, s.scanTime.day).difference(startDate).inDays;
       if (diff >= 0 && diff < days) {
         dailyUnique[diff].add(s.idElev);
         dailyTotal[diff]++;
@@ -606,12 +628,74 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         _totalScansBarGroups = List.generate(days, (i) => BarChartGroupData(x: i, barRods: [
           BarChartRodData(
             toY: dailyTotal[i].toDouble(), 
-            gradient: LinearGradient(
-              colors: [accentColor, accentColor.withOpacity(0.4)],
-              begin: Alignment.bottomCenter,
-              end: Alignment.topCenter,
-            ),
-            width: 12,
+            gradient: LinearGradient(colors: [accentColor, accentColor.withOpacity(0.4)], begin: Alignment.bottomCenter, end: Alignment.topCenter),
+            width: days > 30 ? 4 : 12,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+          )
+        ]));
+      });
+    }
+  }
+
+  void _processChartByWeek(List<ScanLog> scans, DateTime startDate, DateTime endDate) {
+    int weeks = (endDate.difference(startDate).inDays / 7).ceil();
+    if (weeks == 0) weeks = 1;
+    final weeklyUnique = List.generate(weeks, (_) => <int>{});
+    final weeklyTotal = List.generate(weeks, (_) => 0);
+    
+    for (var s in scans) {
+      final diff = DateTime(s.scanTime.year, s.scanTime.month, s.scanTime.day).difference(startDate).inDays;
+      final weekIndex = diff ~/ 7;
+      if (weekIndex >= 0 && weekIndex < weeks) {
+        weeklyUnique[weekIndex].add(s.idElev);
+        weeklyTotal[weekIndex]++;
+      }
+    }
+
+    final accentColor = Theme.of(context).colorScheme.secondary;
+    final rawTotals = List.generate(weeks, (i) => weeklyTotal[i].toDouble());
+
+    if (mounted) {
+      setState(() {
+        _uniqueStudentsSpots = List.generate(weeks, (i) => FlSpot(i.toDouble(), weeklyUnique[i].length.toDouble()));
+        _totalScansRaw = rawTotals;
+        _totalScansBarGroups = List.generate(weeks, (i) => BarChartGroupData(x: i, barRods: [
+          BarChartRodData(
+            toY: weeklyTotal[i].toDouble(), 
+            gradient: LinearGradient(colors: [accentColor, accentColor.withOpacity(0.4)], begin: Alignment.bottomCenter, end: Alignment.topCenter),
+            width: 16,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+          )
+        ]));
+      });
+    }
+  }
+
+  void _processChartByMonth(List<ScanLog> scans, DateTime startDate, DateTime endDate) {
+    int months = (endDate.year - startDate.year) * 12 + endDate.month - startDate.month + 1;
+    final monthlyUnique = List.generate(months, (_) => <int>{});
+    final monthlyTotal = List.generate(months, (_) => 0);
+    
+    for (var s in scans) {
+      int monthIndex = (s.scanTime.year - startDate.year) * 12 + s.scanTime.month - startDate.month;
+      if (monthIndex >= 0 && monthIndex < months) {
+        monthlyUnique[monthIndex].add(s.idElev);
+        monthlyTotal[monthIndex]++;
+      }
+    }
+
+    final accentColor = Theme.of(context).colorScheme.secondary;
+    final rawTotals = List.generate(months, (i) => monthlyTotal[i].toDouble());
+
+    if (mounted) {
+      setState(() {
+        _uniqueStudentsSpots = List.generate(months, (i) => FlSpot(i.toDouble(), monthlyUnique[i].length.toDouble()));
+        _totalScansRaw = rawTotals;
+        _totalScansBarGroups = List.generate(months, (i) => BarChartGroupData(x: i, barRods: [
+          BarChartRodData(
+            toY: monthlyTotal[i].toDouble(), 
+            gradient: LinearGradient(colors: [accentColor, accentColor.withOpacity(0.4)], begin: Alignment.bottomCenter, end: Alignment.topCenter),
+            width: 20,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
           )
         ]));
@@ -1990,7 +2074,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 physics: const BouncingScrollPhysics(),
             slivers: [
               SliverAppBar(
-                expandedHeight: 280,
+                expandedHeight: 140,
                 backgroundColor: Theme.of(context).primaryColor.withOpacity(0.85),
                 surfaceTintColor: Colors.transparent,
                 floating: false,
@@ -2010,7 +2094,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                       background: Stack(
                         fit: StackFit.expand,
                         children: [
-                          HeroBackground(height: 280),
+                          HeroBackground(height: 140),
                           Positioned(
                             left: 88,
                             bottom: 50,
@@ -2154,36 +2238,123 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 )
               else ...[
 
+                // Detailed Student Reports Navigation
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(88, 24, 24, 0),
+                    child: InkWell(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => StudentReportsScreen(
+                              token: widget.token,
+                              username: widget.username,
+                              adminStatus: _adminStatus,
+                            ),
+                          ),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).primaryColor.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Theme.of(context).primaryColor.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.analytics_outlined, color: Theme.of(context).primaryColor, size: 28),
+                            const SizedBox(width: 16),
+                            Text(
+                              l10n.viewDetailedStudentReports,
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Theme.of(context).primaryColor,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Icon(Icons.arrow_forward_ios, color: Theme.of(context).primaryColor, size: 16),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
                 // Charts Header & Selector
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(88, 24, 24, 8),
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          l10n.reports,
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Theme.of(context).primaryColor),
+                        Row(
+                          children: [
+                            Text(
+                              l10n.reportsForAllStudents ?? "Reports for all students",
+                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Theme.of(context).primaryColor),
+                            ),
+                            const Spacer(),
+                            ElevatedButton.icon(
+                              onPressed: () => _showTimetablePopup(),
+                              icon: const Icon(Icons.calendar_today, size: 18),
+                              label: Text(l10n.selectDateOrTimeframe ?? "Select a date or timeframe"),
+                              style: ElevatedButton.styleFrom(
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              ),
+                            ),
+                          ],
                         ),
-                        const Spacer(),
-                        _buildPeriodSelector(),
+                        if (_rangeStart != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12.0),
+                            child: Wrap(
+                              spacing: 8,
+                              children: [
+                                Chip(
+                                  label: Text(_getSelectedDateText()),
+                                  deleteIcon: const Icon(Icons.close, size: 16),
+                                  onDeleted: () {
+                                    setState(() {
+                                      _rangeStart = null;
+                                      _rangeEnd = null;
+                                    });
+                                    _fetchScans();
+                                    _fetchChartData();
+                                  },
+                                  backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
+                                  labelStyle: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold),
+                                  side: BorderSide.none,
+                                ),
+                              ],
+                            ),
+                          ),
                       ],
                     ),
                   ),
                 ),
 
-                // Unique Students Chart (Line)
+                // Charts on a single row
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(88, 8, 24, 12),
-                    child: _buildActivityChart(),
-                  ),
-                ),
-
-                // Total Scans Chart (Bar/Pillars)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(88, 12, 24, 12),
-                    child: _buildTotalScansChart(),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: _buildActivityChart(),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _buildTotalScansChart(),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
 
@@ -2238,22 +2409,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                                 ),
                                 const Spacer(),
                                 IconButton(
-                                  icon: Stack(
-                                    children: [
-                                      const Icon(Icons.filter_list, color: Colors.grey),
-                                      if (_selectedStudentFilters.isNotEmpty)
-                                        Positioned(
-                                          right: 0,
-                                          top: 0,
-                                          child: Container(
-                                            width: 8,
-                                            height: 8,
-                                            decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  onPressed: () => _showStudentFilterDialog(context),
+                                  icon: const Icon(Icons.help_outline, color: Colors.grey),
+                                  onPressed: () => _showTimetableHelpDialog(context),
                                 ),
                                 const SizedBox(width: 8),
                                 Icon(
@@ -2266,7 +2423,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                             ),
                           ),
                           if (_isHistoryExpanded) ...[
-                            _buildCalendarBookingInterface(l10n),
+                            // _buildCalendarBookingInterface logic moved to popup
                           ],
                         ],
                       ),
@@ -2687,69 +2844,141 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   }
 
 
-  /// UI Component for toggling between Day, Week, and Month views on the charts.
-  /// Also handles the secondary toggle for "Rolling" vs "Calendar" views.
-  Widget _buildPeriodSelector() {
+  void _showTimetablePopup() {
     final l10n = AppLocalizations.of(context)!;
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.1)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Day Selector
-          _PeriodChip(
-            label: l10n.day,
-            isSelected: _chartPeriod == ChartPeriod.day,
-            onTap: () {
-              setState(() {
-                _chartPeriod = ChartPeriod.day;
-                _isChartRolling = false;
-              });
-              _fetchChartData();
-            },
-          ),
-          // Week Selector (including Rolling Toggle)
-          _PeriodChip(
-            label: _chartPeriod == ChartPeriod.week 
-              ? ( _isChartRolling ? l10n.sevenDays : l10n.thisWeek ) 
-              : l10n.week,
-            isSelected: _chartPeriod == ChartPeriod.week,
-            onTap: () {
-              setState(() {
-                if (_chartPeriod == ChartPeriod.week) {
-                  _isChartRolling = !_isChartRolling; // Toggle rolling mode if already selected
-                } else {
-                  _chartPeriod = ChartPeriod.week;
-                  _isChartRolling = false;
-                }
-              });
-              _fetchChartData();
-            },
-          ),
-          // Month Selector (including Rolling Toggle)
-          _PeriodChip(
-            label: _chartPeriod == ChartPeriod.month 
-              ? ( _isChartRolling ? l10n.thirtyDays : l10n.thisMonth ) 
-              : l10n.month,
-            isSelected: _chartPeriod == ChartPeriod.month,
-            onTap: () {
-              setState(() {
-                if (_chartPeriod == ChartPeriod.month) {
-                  _isChartRolling = !_isChartRolling; // Toggle rolling mode if already selected
-                } else {
-                  _chartPeriod = ChartPeriod.month;
-                  _isChartRolling = false;
-                }
-              });
-              _fetchChartData();
-            },
-          ),
-        ],
-      ),
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              backgroundColor: Theme.of(context).cardColor,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              child: Container(
+                width: MediaQuery.of(context).size.width * 0.9,
+                constraints: const BoxConstraints(maxWidth: 500, maxHeight: 700),
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      l10n.selectDateOrTimeframe ?? "Select a date or timeframe",
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 16),
+                    // Presets
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _PeriodChip(
+                            label: l10n.day,
+                            isSelected: _chartPeriod == ChartPeriod.day,
+                            onTap: () {
+                              final today = DateTime.now();
+                              setState(() {
+                                _chartPeriod = ChartPeriod.day;
+                                _isChartRolling = false;
+                                _rangeStart = DateTime(today.year, today.month, today.day);
+                                _rangeEnd = _rangeStart;
+                                _focusedDay = _rangeStart!;
+                              });
+                              setDialogState(() {});
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          _PeriodChip(
+                            label: _chartPeriod == ChartPeriod.week 
+                                ? ( _isChartRolling ? l10n.sevenDays : l10n.thisWeek ) 
+                                : l10n.week,
+                            isSelected: _chartPeriod == ChartPeriod.week,
+                            onTap: () {
+                              final now = DateTime.now();
+                              final today = DateTime(now.year, now.month, now.day);
+                              setState(() {
+                                if (_chartPeriod == ChartPeriod.week) {
+                                  _isChartRolling = !_isChartRolling;
+                                } else {
+                                  _chartPeriod = ChartPeriod.week;
+                                  _isChartRolling = false;
+                                }
+                                if (_isChartRolling) {
+                                  _rangeStart = today.subtract(const Duration(days: 6));
+                                  _rangeEnd = today;
+                                } else {
+                                  _rangeStart = today.subtract(Duration(days: today.weekday - 1));
+                                  _rangeEnd = today;
+                                }
+                                _focusedDay = _rangeStart!;
+                              });
+                              setDialogState(() {});
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          _PeriodChip(
+                            label: _chartPeriod == ChartPeriod.month 
+                                ? ( _isChartRolling ? l10n.thirtyDays : l10n.thisMonth ) 
+                                : l10n.month,
+                            isSelected: _chartPeriod == ChartPeriod.month,
+                            onTap: () {
+                              final now = DateTime.now();
+                              final today = DateTime(now.year, now.month, now.day);
+                              setState(() {
+                                if (_chartPeriod == ChartPeriod.month) {
+                                  _isChartRolling = !_isChartRolling;
+                                } else {
+                                  _chartPeriod = ChartPeriod.month;
+                                  _isChartRolling = false;
+                                }
+                                if (_isChartRolling) {
+                                  _rangeStart = today.subtract(const Duration(days: 29));
+                                  _rangeEnd = today;
+                                } else {
+                                  _rangeStart = DateTime(now.year, now.month, 1);
+                                  final nextMonth = DateTime(now.year, now.month + 1, 1);
+                                  _rangeEnd = nextMonth.subtract(const Duration(days: 1));
+                                }
+                                _focusedDay = _rangeStart!;
+                              });
+                              setDialogState(() {});
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: _buildCalendarBookingInterface(l10n, setDialogState),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: Text(l10n.cancel, style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color)),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _fetchScans();
+                            _fetchChartData();
+                          },
+                          child: Text(l10n.done ?? "Done"),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -2780,29 +3009,37 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 reservedSize: 30,
                 interval: 1,
                 getTitlesWidget: (value, meta) {
-                  if (_chartPeriod == ChartPeriod.day) {
+                  if (_currentChartMode == 'hourly') {
                     if (value.toInt() % 4 != 0) return const SizedBox();
                     return Padding(
                       padding: const EdgeInsets.only(top: 8.0),
                       child: Text('${value.toInt()}h', style: TextStyle(fontSize: 10, color: labelColor)),
                     );
+                  } else if (_currentChartMode == 'daily') {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Text(
+                        (value.toInt() + 1).toString(),
+                        style: TextStyle(fontSize: 10, color: labelColor),
+                      ),
+                    );
+                  } else if (_currentChartMode == 'weekly') {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Text(
+                        'W${value.toInt() + 1}',
+                        style: TextStyle(fontSize: 10, color: labelColor),
+                      ),
+                    );
+                  } else {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Text(
+                        'M${value.toInt() + 1}',
+                        style: TextStyle(fontSize: 10, color: labelColor),
+                      ),
+                    );
                   }
-                  if (isWeekly && !_isChartRolling) {
-                    final days = [l10n.mon, l10n.tue, l10n.wed, l10n.thu, l10n.fri];
-                    if (value.toInt() >= 0 && value.toInt() < days.length) {
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 8.0),
-                        child: Text(days[value.toInt()], style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: labelColor)),
-                      );
-                    }
-                  }
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: Text(
-                      (value.toInt() + 1).toString(),
-                      style: TextStyle(fontSize: 10, color: labelColor),
-                    ),
-                  );
                 },
               ),
             ),
@@ -2883,7 +3120,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           begin: Alignment.bottomCenter,
           end: Alignment.topCenter,
         ),
-        width: _chartPeriod == ChartPeriod.day ? 8 : 12,
+        width: _currentChartMode == 'hourly' ? 8 : 12,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
       )
     ]));
@@ -2901,7 +3138,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 showTitles: true,
                 reservedSize: 22,
                 getTitlesWidget: (value, meta) {
-                  if (_chartPeriod == ChartPeriod.day) return const SizedBox();
+                  if (_currentChartMode == 'hourly') return const SizedBox();
                   return Text((value.toInt() + 1).toString(), style: TextStyle(fontSize: 8, color: labelColor));
                 },
               ),
@@ -2913,6 +3150,97 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           borderData: FlBorderData(show: false),
           barGroups: reactiveGroups.isEmpty ? _totalScansBarGroups : reactiveGroups,
         ),
+      ),
+    );
+  }
+
+  void _showTimetableHelpDialog(BuildContext context) {
+    final PageController pageController = PageController();
+    int currentPage = 0;
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            final l10n = AppLocalizations.of(context)!;
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.all(20),
+              child: SizedBox(
+                width: 500,
+                height: 350,
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+                      onPressed: currentPage > 0
+                          ? () {
+                              pageController.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+                            }
+                          : null,
+                    ),
+                    Expanded(
+                      child: PageView(
+                        controller: pageController,
+                        onPageChanged: (index) {
+                          setState(() {
+                            currentPage = index;
+                          });
+                        },
+                        children: [
+                          _buildHelpSlide(context, l10n.helpSlide1Title, l10n.helpSlide1Desc, Icons.touch_app, false),
+                          _buildHelpSlide(context, l10n.helpSlide2Title, l10n.helpSlide2Desc, Icons.date_range, false),
+                          _buildHelpSlide(context, l10n.helpSlide3Title, l10n.helpSlide3Desc, Icons.access_time, true),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.arrow_forward_ios, color: Colors.white),
+                      onPressed: currentPage < 2
+                          ? () {
+                              pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+                            }
+                          : null,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildHelpSlide(BuildContext context, String title, String description, IconData icon, bool isLast) {
+    final l10n = AppLocalizations.of(context)!;
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 64, color: Theme.of(context).colorScheme.secondary),
+          const SizedBox(height: 24),
+          Text(title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+          const SizedBox(height: 16),
+          Text(description, style: TextStyle(fontSize: 16, color: Theme.of(context).textTheme.bodyMedium?.color, height: 1.5), textAlign: TextAlign.center),
+          const Spacer(),
+          Text(isLast ? (l10n.done ?? "Done") : (l10n.clickNext ?? "Click next ->"), style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey[500])),
+        ],
       ),
     );
   }
@@ -2991,7 +3319,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     );
   }
 
-  Widget _buildCalendarBookingInterface(AppLocalizations l10n) {
+  Widget _buildCalendarBookingInterface(AppLocalizations l10n, [StateSetter? setDialogState]) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -3005,6 +3333,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           ),
           padding: const EdgeInsets.all(12),
           child: TableCalendar(
+            locale: Localizations.localeOf(context).toString(),
             firstDay: DateTime(DateTime.now().year - 1),
             lastDay: DateTime(DateTime.now().year + 1),
             focusedDay: _focusedDay,
@@ -3019,10 +3348,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
               setState(() {
                 _focusedDay = focusedDay;
               });
-              // Refresh scans when navigating months (only if no range is selected)
-              if (_rangeStart == null && _rangeEnd == null) {
-                _fetchScans();
-              }
+              if (setDialogState != null) setDialogState(() {});
             },
             onDaySelected: (selectedDay, focusedDay) {
               final now = DateTime.now();
@@ -3044,7 +3370,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   _focusedDay = focusedDay;
 
                   // Range selection logic
-                  if (_rangeStart == null || _rangeEnd != null) {
+                  if (_rangeStart != null && _rangeEnd == null && isSameDay(_rangeStart, selectedDay)) {
+                    _rangeStart = null;
+                  } else if (_rangeStart != null && _rangeEnd != null && isSameDay(_rangeStart, selectedDay)) {
+                    _rangeEnd = null;
+                  } else if (_rangeStart != null && _rangeEnd != null && isSameDay(_rangeEnd, selectedDay)) {
+                    _rangeStart = _rangeEnd;
+                    _rangeEnd = null;
+                  } else if (_rangeStart == null || _rangeEnd != null) {
                     _rangeStart = selectedDay;
                     _rangeEnd = null;
                   } else if (selectedDay.isBefore(_rangeStart!)) {
@@ -3054,7 +3387,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                     _rangeEnd = selectedDay;
                   }
                 });
-                _fetchScans();
+                if (setDialogState != null) setDialogState(() {});
               });
             },
             onDayLongPressed: (selectedDay, focusedDay) => _handleDoubleTap(selectedDay, context),
@@ -3077,12 +3410,29 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
               _singleTapTimer?.cancel();
               _singleTapTimer = Timer(const Duration(milliseconds: 250), () {
-                setState(() {
-                  _focusedDay = focusedDay;
-                  _rangeStart = start;
-                  _rangeEnd = end;
-                });
-                _fetchScans();
+                if (selectedDay != null) {
+                  setState(() {
+                    _focusedDay = focusedDay;
+                    
+                    if (_rangeStart != null && _rangeEnd == null && isSameDay(_rangeStart, selectedDay)) {
+                      _rangeStart = null;
+                    } else if (_rangeStart != null && _rangeEnd != null && isSameDay(_rangeStart, selectedDay)) {
+                      _rangeEnd = null;
+                    } else if (_rangeStart != null && _rangeEnd != null && isSameDay(_rangeEnd, selectedDay)) {
+                      _rangeStart = _rangeEnd;
+                      _rangeEnd = null;
+                    } else if (_rangeStart == null || _rangeEnd != null) {
+                      _rangeStart = selectedDay;
+                      _rangeEnd = null;
+                    } else if (selectedDay.isBefore(_rangeStart!)) {
+                      _rangeEnd = _rangeStart;
+                      _rangeStart = selectedDay;
+                    } else {
+                      _rangeEnd = selectedDay;
+                    }
+                  });
+                  if (setDialogState != null) setDialogState(() {});
+                }
               });
             },
             calendarStyle: CalendarStyle(
@@ -3138,7 +3488,7 @@ class _ChartBase extends StatelessWidget {
     
     return Container(
       padding: const EdgeInsets.all(24),
-      height: 320,
+      height: 220,
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(24),

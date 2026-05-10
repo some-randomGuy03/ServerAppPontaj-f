@@ -340,4 +340,61 @@ class AppLocalizationsRo extends AppLocalizations {
 
   @override
   String get scansPerHour => 'Scanări pe Oră';
+
+  @override
+  String get reportsForAllStudents => 'Rapoarte pentru toți elevii';
+
+  @override
+  String get selectDateOrTimeframe => 'Selectează o dată sau un interval';
+
+  @override
+  String get selectOneOrMoreStudents => 'Selectează unul sau mai mulți elevi';
+
+  @override
+  String get goBackToMainPage => 'Înapoi la pagina principală';
+
+  @override
+  String get goBack => 'Înapoi';
+
+  @override
+  String get detailedStudentReports => 'Rapoarte Detaliate Elevi';
+
+  @override
+  String get activeFilters => 'Filtre active:';
+
+  @override
+  String get studentUses => 'Utilizări Elevi';
+
+  @override
+  String get scansPerStudent => 'Scanări per elev';
+
+  @override
+  String get done => 'Gata';
+
+  @override
+  String get clickNext => 'Apasă următorul ->';
+
+  @override
+  String get helpSlide1Title => 'Selectează o zi';
+
+  @override
+  String get helpSlide1Desc => 'Apasă pe o zi pentru a o selecta.';
+
+  @override
+  String get helpSlide2Title => 'Creează un interval';
+
+  @override
+  String get helpSlide2Desc =>
+      'Apasă pe 2 zile diferite pentru a crea un interval.';
+
+  @override
+  String get helpSlide3Title => 'Selectează ore specifice';
+
+  @override
+  String get helpSlide3Desc =>
+      'Ȟine apăsat pe ziua selectată (sau pe fiecare capăt al intervalului) pentru a selecta o oră de început şi de sfârşit.';
+
+  @override
+  String get viewDetailedStudentReports =>
+      'Vezi rapoartele detaliate ale elevilor';
 }

@@ -332,8 +332,63 @@ class AppLocalizationsEn extends AppLocalizations {
   String get totalScans => 'Total Scans';
 
   @override
-  String get hourlyDistribution => 'Hourly Distribution';
+  String get hourlyDistribution => 'Distribuție Orară';
 
   @override
   String get scansPerHour => 'Scans per Hour';
+
+  @override
+  String get reportsForAllStudents => 'Reports for all students';
+
+  @override
+  String get selectDateOrTimeframe => 'Select a date or timeframe';
+
+  @override
+  String get selectOneOrMoreStudents => 'Select one or more students';
+
+  @override
+  String get goBackToMainPage => 'Go back to main page';
+
+  @override
+  String get goBack => 'Go back';
+
+  @override
+  String get detailedStudentReports => 'Detailed Student Reports';
+
+  @override
+  String get activeFilters => 'Active filters:';
+
+  @override
+  String get studentUses => 'Student Uses';
+
+  @override
+  String get scansPerStudent => 'Scans per student';
+
+  @override
+  String get done => 'Done';
+
+  @override
+  String get clickNext => 'Click next ->';
+
+  @override
+  String get helpSlide1Title => 'Select a Day';
+
+  @override
+  String get helpSlide1Desc => 'Tap on a day to select it.';
+
+  @override
+  String get helpSlide2Title => 'Create a Timeframe';
+
+  @override
+  String get helpSlide2Desc => 'Tap 2 different days to create a timeframe.';
+
+  @override
+  String get helpSlide3Title => 'Select Specific Hours';
+
+  @override
+  String get helpSlide3Desc =>
+      'Hold on the selected day (or hold on each edge of a timeframe) to select a specific beginning and end hour.';
+
+  @override
+  String get viewDetailedStudentReports => 'View detailed student reports';
 }

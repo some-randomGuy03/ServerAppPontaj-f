@@ -745,6 +745,114 @@ abstract class AppLocalizations {
   /// In ro, this message translates to:
   /// **'Scanări pe Oră'**
   String get scansPerHour;
+
+  /// No description provided for @reportsForAllStudents.
+  ///
+  /// In ro, this message translates to:
+  /// **'Rapoarte pentru toți elevii'**
+  String get reportsForAllStudents;
+
+  /// No description provided for @selectDateOrTimeframe.
+  ///
+  /// In ro, this message translates to:
+  /// **'Selectează o dată sau un interval'**
+  String get selectDateOrTimeframe;
+
+  /// No description provided for @selectOneOrMoreStudents.
+  ///
+  /// In ro, this message translates to:
+  /// **'Selectează unul sau mai mulți elevi'**
+  String get selectOneOrMoreStudents;
+
+  /// No description provided for @goBackToMainPage.
+  ///
+  /// In ro, this message translates to:
+  /// **'Înapoi la pagina principală'**
+  String get goBackToMainPage;
+
+  /// No description provided for @goBack.
+  ///
+  /// In ro, this message translates to:
+  /// **'Înapoi'**
+  String get goBack;
+
+  /// No description provided for @detailedStudentReports.
+  ///
+  /// In ro, this message translates to:
+  /// **'Rapoarte Detaliate Elevi'**
+  String get detailedStudentReports;
+
+  /// No description provided for @activeFilters.
+  ///
+  /// In ro, this message translates to:
+  /// **'Filtre active:'**
+  String get activeFilters;
+
+  /// No description provided for @studentUses.
+  ///
+  /// In ro, this message translates to:
+  /// **'Utilizări Elevi'**
+  String get studentUses;
+
+  /// No description provided for @scansPerStudent.
+  ///
+  /// In ro, this message translates to:
+  /// **'Scanări per elev'**
+  String get scansPerStudent;
+
+  /// No description provided for @done.
+  ///
+  /// In ro, this message translates to:
+  /// **'Gata'**
+  String get done;
+
+  /// No description provided for @clickNext.
+  ///
+  /// In ro, this message translates to:
+  /// **'Apasă următorul ->'**
+  String get clickNext;
+
+  /// No description provided for @helpSlide1Title.
+  ///
+  /// In ro, this message translates to:
+  /// **'Selectează o zi'**
+  String get helpSlide1Title;
+
+  /// No description provided for @helpSlide1Desc.
+  ///
+  /// In ro, this message translates to:
+  /// **'Apasă pe o zi pentru a o selecta.'**
+  String get helpSlide1Desc;
+
+  /// No description provided for @helpSlide2Title.
+  ///
+  /// In ro, this message translates to:
+  /// **'Creează un interval'**
+  String get helpSlide2Title;
+
+  /// No description provided for @helpSlide2Desc.
+  ///
+  /// In ro, this message translates to:
+  /// **'Apasă pe 2 zile diferite pentru a crea un interval.'**
+  String get helpSlide2Desc;
+
+  /// No description provided for @helpSlide3Title.
+  ///
+  /// In ro, this message translates to:
+  /// **'Selectează ore specifice'**
+  String get helpSlide3Title;
+
+  /// No description provided for @helpSlide3Desc.
+  ///
+  /// In ro, this message translates to:
+  /// **'Ȟine apăsat pe ziua selectată (sau pe fiecare capăt al intervalului) pentru a selecta o oră de început şi de sfârşit.'**
+  String get helpSlide3Desc;
+
+  /// No description provided for @viewDetailedStudentReports.
+  ///
+  /// In ro, this message translates to:
+  /// **'Vezi rapoartele detaliate ale elevilor'**
+  String get viewDetailedStudentReports;
 }
 
 class _AppLocalizationsDelegate
