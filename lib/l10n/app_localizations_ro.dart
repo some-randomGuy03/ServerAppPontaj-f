@@ -392,7 +392,7 @@ class AppLocalizationsRo extends AppLocalizations {
 
   @override
   String get helpSlide3Desc =>
-      'Ȟine apăsat pe ziua selectată (sau pe fiecare capăt al intervalului) pentru a selecta o oră de început şi de sfârşit.';
+      'Ține apăsat pe ziua selectată (sau pe fiecare capăt al intervalului) pentru a selecta o oră de început şi de sfârşit.';
 
   @override
   String get viewDetailedStudentReports =>

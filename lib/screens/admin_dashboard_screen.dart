@@ -84,6 +84,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   // --- Analytics Chart State ---
   ChartPeriod _chartPeriod = ChartPeriod.week; // Keep for preset state
   bool _isChartRolling = false; // Toggle: Start of period (Calendar) vs Last X days (Rolling)
+  String? _presetKey = 'thisMonth';
   List<ScanLog>? _chartScans; // Cached raw analysis data from the last API call
   bool _isLoadingCharts = false; // Spinner flag for async data fetching
   List<FlSpot> _uniqueStudentsSpots = []; // Prepared coordinate points for the unique students line chart
@@ -100,6 +101,32 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
     final hasCustomTime = _startTime.hour != 0 || _startTime.minute != 0 || _endTime.hour != 23 || _endTime.minute != 59;
     final timeStr = hasCustomTime ? " (${formatTime(_startTime)} - ${formatTime(_endTime)})" : "";
+
+    if (_presetKey != null) {
+      final locale = Localizations.localeOf(context).languageCode;
+      final isRo = locale == 'ro';
+      String presetLabel = '';
+      switch (_presetKey) {
+        case 'today':
+          presetLabel = isRo ? "Astăzi" : "Today";
+          break;
+        case 'thisWeek':
+          presetLabel = isRo ? "Săptămâna aceasta" : "This Week";
+          break;
+        case 'last7Days':
+          presetLabel = isRo ? "Ultimele 7 zile" : "Last 7 Days";
+          break;
+        case 'thisMonth':
+          presetLabel = isRo ? "Luna aceasta" : "This Month";
+          break;
+        case 'last30Days':
+          presetLabel = isRo ? "Ultimele 30 zile" : "Last 30 Days";
+          break;
+        default:
+          presetLabel = isRo ? "Luna aceasta" : "This Month";
+      }
+      return "$presetLabel$timeStr";
+    }
 
     if (_rangeStart != null && _rangeEnd != null) {
       return "${DateFormat('MMM d').format(_rangeStart!)} - ${DateFormat('MMM d').format(_rangeEnd!)}$timeStr";
@@ -257,7 +284,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   Future<void> _handleDoubleTap(DateTime date, BuildContext context) async {
     final l10n = AppLocalizations.of(context)!;
     // Determine the state of our interval
-    if (_rangeStart != null && _rangeEnd != null) {
+    if (_rangeStart != null && _rangeEnd != null && !isSameDay(_rangeStart, _rangeEnd)) {
       if (isSameDay(date, _rangeStart)) {
         // Double tapped the start date
         final TimeOfDay? picked = await showTimePicker(
@@ -268,6 +295,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         if (picked != null) {
           setState(() => _startTime = picked);
           _fetchScans();
+          _processChartData();
         }
       } else if (isSameDay(date, _rangeEnd)) {
         // Double tapped the end date
@@ -281,6 +309,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
             _endTime = picked;
           });
           _fetchScans();
+          _processChartData();
         }
       }
     } else {
@@ -360,6 +389,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         _endTime = tempEnd;
       });
       _fetchScans();
+      _processChartData();
     }
   }
 
@@ -550,8 +580,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       eDate = DateTime(_focusedDay.year, _focusedDay.month + 1, 1);
     }
 
+    // Cap eDate to not show future periods
+    final now = DateTime.now();
+    final capDate = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
+    if (eDate.isAfter(capDate)) {
+      eDate = capDate;
+    }
+
     final duration = eDate.difference(sDate);
-    final days = duration.inDays;
+    int days = duration.inDays;
+    if (days <= 0) days = 1;
 
     if (days <= 1) {
       _currentChartMode = 'hourly';
@@ -584,7 +622,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     final accentColor = Theme.of(context).colorScheme.secondary;
     final rawTotals = <double>[];
 
-    for (int i = 0; i < 24; i++) {
+    final now = DateTime.now();
+    int maxHour = 24;
+    if (startDate.year == now.year && startDate.month == now.month && startDate.day == now.day) {
+      maxHour = now.hour + 1;
+      if (maxHour > 24) maxHour = 24;
+    }
+
+    for (int i = 0; i < maxHour; i++) {
       final count = totalCounts[i]!.toDouble();
       spots.add(FlSpot(i.toDouble(), hourlyUnique[i]!.length.toDouble()));
       rawTotals.add(count);
@@ -713,8 +758,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       final today = DateTime(now.year, now.month, now.day);
       final tomorrow = today.add(const Duration(days: 1));
       
-      final rollingWeekAgo = today.subtract(const Duration(days: 7));
-      final rollingMonthAgo = today.subtract(const Duration(days: 30));
+      final rollingWeekAgo = today.subtract(const Duration(days: 6));
+      final rollingMonthAgo = today.subtract(const Duration(days: 29));
       
       final currentWeekStart = today.subtract(Duration(days: today.weekday - 1)); // Monday
       final currentMonthStart = DateTime(now.year, now.month, 1);
@@ -2299,14 +2344,25 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Theme.of(context).primaryColor),
                             ),
                             const Spacer(),
-                            ElevatedButton.icon(
-                              onPressed: () => _showTimetablePopup(),
-                              icon: const Icon(Icons.calendar_today, size: 18),
-                              label: Text(l10n.selectDateOrTimeframe ?? "Select a date or timeframe"),
-                              style: ElevatedButton.styleFrom(
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ElevatedButton.icon(
+                                  onPressed: () => _showTimetablePopup(),
+                                  icon: const Icon(Icons.calendar_today, size: 18),
+                                  label: Text(l10n.selectDateOrTimeframe ?? "Select a date or timeframe"),
+                                  style: ElevatedButton.styleFrom(
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  icon: const Icon(Icons.help_outline, color: Colors.grey),
+                                  onPressed: () => _showTimetableHelpDialog(context),
+                                  tooltip: "Ghid",
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -2323,12 +2379,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                                     setState(() {
                                       _rangeStart = null;
                                       _rangeEnd = null;
+                                      _presetKey = 'thisMonth';
                                     });
                                     _fetchScans();
                                     _fetchChartData();
                                   },
-                                  backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
-                                  labelStyle: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold),
+                                  backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                                  labelStyle: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold),
                                   side: BorderSide.none,
                                 ),
                               ],
@@ -2408,11 +2465,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                                   ],
                                 ),
                                 const Spacer(),
-                                IconButton(
-                                  icon: const Icon(Icons.help_outline, color: Colors.grey),
-                                  onPressed: () => _showTimetableHelpDialog(context),
-                                ),
-                                const SizedBox(width: 8),
                                 Icon(
                                   _isHistoryExpanded
                                       ? Icons.keyboard_arrow_up
@@ -2432,7 +2484,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 ),
 
                 // Scans List Section
-                if (_isLoadingScans)
+                if (!_isHistoryExpanded)
+                  const SliverToBoxAdapter()
+                else if (_isLoadingScans)
                   const SliverFillRemaining(
                     child: Center(child: CircularProgressIndicator()),
                   )
@@ -2878,11 +2932,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                             onTap: () {
                               final today = DateTime.now();
                               setState(() {
+                                _presetKey = 'today';
                                 _chartPeriod = ChartPeriod.day;
                                 _isChartRolling = false;
                                 _rangeStart = DateTime(today.year, today.month, today.day);
                                 _rangeEnd = _rangeStart;
                                 _focusedDay = _rangeStart!;
+                                _startTime = const TimeOfDay(hour: 0, minute: 0);
+                                _endTime = const TimeOfDay(hour: 23, minute: 59);
                               });
                               setDialogState(() {});
                             },
@@ -2904,13 +2961,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                                   _isChartRolling = false;
                                 }
                                 if (_isChartRolling) {
+                                  _presetKey = 'last7Days';
                                   _rangeStart = today.subtract(const Duration(days: 6));
                                   _rangeEnd = today;
                                 } else {
+                                  _presetKey = 'thisWeek';
                                   _rangeStart = today.subtract(Duration(days: today.weekday - 1));
                                   _rangeEnd = today;
                                 }
                                 _focusedDay = _rangeStart!;
+                                _startTime = const TimeOfDay(hour: 0, minute: 0);
+                                _endTime = const TimeOfDay(hour: 23, minute: 59);
                               });
                               setDialogState(() {});
                             },
@@ -2932,14 +2993,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                                   _isChartRolling = false;
                                 }
                                 if (_isChartRolling) {
+                                  _presetKey = 'last30Days';
                                   _rangeStart = today.subtract(const Duration(days: 29));
                                   _rangeEnd = today;
                                 } else {
+                                  _presetKey = 'thisMonth';
                                   _rangeStart = DateTime(now.year, now.month, 1);
                                   final nextMonth = DateTime(now.year, now.month + 1, 1);
                                   _rangeEnd = nextMonth.subtract(const Duration(days: 1));
                                 }
                                 _focusedDay = _rangeStart!;
+                                _startTime = const TimeOfDay(hour: 0, minute: 0);
+                                _endTime = const TimeOfDay(hour: 23, minute: 59);
                               });
                               setDialogState(() {});
                             },
@@ -3016,6 +3081,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 reservedSize: 30,
                 interval: 1,
                 getTitlesWidget: (value, meta) {
+                  if (value < 0 || value % 1 != 0) {
+                    return const SizedBox();
+                  }
                   if (_currentChartMode == 'hourly') {
                     if (value.toInt() % 4 != 0) return const SizedBox();
                     return Padding(
@@ -3067,12 +3135,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           ),
           lineTouchData: LineTouchData(
             touchTooltipData: LineTouchTooltipData(
-              tooltipBgColor: Theme.of(context).cardColor,
+              tooltipBgColor: Colors.blueGrey.withOpacity(0.8),
               getTooltipItems: (touchedSpots) {
                 return touchedSpots.map((spot) {
                   return LineTooltipItem(
                     '${spot.y.toInt()} ${l10n.enrolled}',
-                    TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold),
+                    const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                   );
                 }).toList();
               },
@@ -3082,7 +3150,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           lineBarsData: [
             LineChartBarData(
               spots: _uniqueStudentsSpots.isEmpty ? [const FlSpot(0, 0)] : _uniqueStudentsSpots,
-              isCurved: true,
+              isCurved: false,
               color: Theme.of(context).colorScheme.secondary,
               barWidth: 5,
               isStrokeCapRound: true,
@@ -3153,6 +3221,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 showTitles: true,
                 reservedSize: 22,
                 getTitlesWidget: (value, meta) {
+                  if (value < 0 || value % 1 != 0) {
+                    return const SizedBox();
+                  }
                   if (_currentChartMode == 'hourly') return const SizedBox();
                   if (_currentChartMode == 'weekly') {
                     return Text('W${value.toInt() + 1}', style: TextStyle(fontSize: 8, color: labelColor));
@@ -3388,6 +3459,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
               _singleTapTimer?.cancel();
               _singleTapTimer = Timer(const Duration(milliseconds: 250), () {
                 setState(() {
+                  _presetKey = null;
                   _focusedDay = focusedDay;
 
                   // Range selection logic
@@ -3433,6 +3505,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
               _singleTapTimer = Timer(const Duration(milliseconds: 250), () {
                 if (selectedDay != null) {
                   setState(() {
+                    _presetKey = null;
                     _focusedDay = focusedDay;
                     
                     if (_rangeStart != null && _rangeEnd == null && isSameDay(_rangeStart, selectedDay)) {
@@ -3457,6 +3530,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
               });
             },
             calendarStyle: CalendarStyle(
+              defaultTextStyle: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
+              weekendTextStyle: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black),
+              outsideTextStyle: TextStyle(color: (Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black).withOpacity(0.3)),
+              todayTextStyle: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color, fontWeight: FontWeight.bold),
+              selectedTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              rangeStartTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              rangeEndTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              withinRangeTextStyle: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
               rangeHighlightColor: Theme.of(context).colorScheme.secondary.withOpacity(0.2),
               rangeStartDecoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.secondary,
@@ -3479,9 +3560,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 shape: BoxShape.circle,
               ),
             ),
+            daysOfWeekStyle: DaysOfWeekStyle(
+              weekdayStyle: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color, fontWeight: FontWeight.bold),
+              weekendStyle: TextStyle(color: Theme.of(context).colorScheme.secondary, fontWeight: FontWeight.bold),
+            ),
             headerStyle: HeaderStyle(
               formatButtonVisible: false,
               titleCentered: true,
+              titleTextStyle: TextStyle(color: Theme.of(context).textTheme.titleLarge?.color, fontSize: 16, fontWeight: FontWeight.bold),
               leftChevronIcon: Icon(Icons.chevron_left, color: Theme.of(context).colorScheme.secondary),
               rightChevronIcon: Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.secondary),
             ),

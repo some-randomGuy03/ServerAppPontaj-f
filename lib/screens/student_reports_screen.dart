@@ -8,6 +8,7 @@ import '../widgets/hero_background.dart';
 import '../widgets/floating_stats_sidebar.dart';
 import '../models/scan_log.dart';
 import '../models/elev.dart';
+import '../models/professor.dart';
 import '../services/admin_service.dart';
 import '../services/elev_service.dart';
 import 'dart:async';
@@ -44,6 +45,7 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
   RangeSelectionMode _rangeSelectionMode = RangeSelectionMode.toggledOff;
   ChartPeriod _chartPeriod = ChartPeriod.week;
   bool _isChartRolling = false;
+  String? _presetKey = 'thisMonth';
   DateTime? _lastTapTime;
   DateTime? _lastTapDay;
   Timer? _singleTapTimer;
@@ -55,6 +57,8 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
   // Student Filter State
   List<int> _selectedStudentFilters = [];
   final TextEditingController _scanSearchController = TextEditingController();
+  final TextEditingController _adminSearchController = TextEditingController();
+  final TextEditingController _elevSearchController = TextEditingController();
 
   // Data State
   List<ScanLog>? _chartScans;
@@ -66,16 +70,31 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
   List<double> _totalScansRaw = [];
   List<BarChartGroupData> _totalScansBarGroups = [];
 
+  // Statistics State
+  int _scansToday = 0;
+  int _scansCurrentWeek = 0;
+  int _scansRollingWeek = 0;
+  int _scansCurrentMonth = 0;
+  int _scansRollingMonth = 0;
+  bool _isLoadingStats = false;
+  bool _useRollingWeekStats = false;
+  bool _useRollingMonthStats = false;
+  List<Professor> _currentAdmins = [];
+
   @override
   void initState() {
     super.initState();
     _fetchElevi();
+    _fetchAdmins();
+    _fetchScanStatistics();
     _fetchChartData();
   }
 
   @override
   void dispose() {
     _scanSearchController.dispose();
+    _adminSearchController.dispose();
+    _elevSearchController.dispose();
     _singleTapTimer?.cancel();
     super.dispose();
   }
@@ -92,6 +111,615 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
     }
   }
 
+  Future<void> _fetchAdmins() async {
+    try {
+      final response = await _adminService.getProfessors(widget.token);
+      if (mounted) {
+        setState(() {
+          _currentAdmins = response.admins;
+        });
+      }
+    } catch (e) {
+      print('Error fetching professors: $e');
+    }
+  }
+
+  Future<void> _fetchScanStatistics() async {
+    setState(() {
+      _isLoadingStats = true;
+    });
+
+    try {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final tomorrow = today.add(const Duration(days: 1));
+      
+      final rollingWeekAgo = today.subtract(const Duration(days: 6));
+      final rollingMonthAgo = today.subtract(const Duration(days: 29));
+      
+      final currentWeekStart = today.subtract(Duration(days: today.weekday - 1)); // Monday
+      final currentMonthStart = DateTime(now.year, now.month, 1);
+
+      // Fetch all periods in parallel
+      final results = await Future.wait([
+        _adminService.getScansByDate(widget.token, today, tomorrow),
+        _adminService.getScansByDate(widget.token, currentWeekStart, tomorrow),
+        _adminService.getScansByDate(widget.token, rollingWeekAgo, tomorrow),
+        _adminService.getScansByDate(widget.token, currentMonthStart, tomorrow),
+        _adminService.getScansByDate(widget.token, rollingMonthAgo, tomorrow),
+      ]);
+
+      if (mounted) {
+        setState(() {
+          _scansToday = results[0].data.length;
+          _scansCurrentWeek = results[1].data.length;
+          _scansRollingWeek = results[2].data.length;
+          _scansCurrentMonth = results[3].data.length;
+          _scansRollingMonth = results[4].data.length;
+        });
+      }
+    } catch (e) {
+      print('Error fetching scan statistics: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingStats = false;
+        });
+      }
+    }
+  }
+
+  void _showProfessorsListModal() {
+    final l10n = AppLocalizations.of(context)!;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.9,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (_, controller) => Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    Text(
+                      l10n.professors,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: Container(
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.1)),
+                  ),
+                  child: TextField(
+                    controller: _adminSearchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search...',
+                      hintStyle: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[400],
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        size: 20,
+                        color: Colors.grey[400],
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _adminSearchController,
+                  builder: (context, value, child) {
+                    final query = value.text.toLowerCase();
+                    final filteredAdmins = _currentAdmins.where((admin) {
+                      return admin.name.toLowerCase().contains(query) ||
+                          admin.email.toLowerCase().contains(query);
+                    }).toList();
+
+                    if (filteredAdmins.isEmpty) {
+                      final isRo = Localizations.localeOf(context).languageCode == 'ro';
+                      return Center(child: Text(isRo ? "Nu există profesori" : "No professors"));
+                    }
+
+                    return ListView.builder(
+                      controller: controller,
+                      itemCount: filteredAdmins.length,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 8,
+                      ),
+                      itemBuilder: (context, index) {
+                        final admin = filteredAdmins[index];
+                        final isFirst = index == 0;
+                        final isLast = index == filteredAdmins.length - 1;
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 1),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).cardColor,
+                            borderRadius: BorderRadius.vertical(
+                              top: isFirst
+                                  ? const Radius.circular(20)
+                                  : Radius.zero,
+                              bottom: isLast
+                                  ? const Radius.circular(20)
+                                  : Radius.zero,
+                            ),
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 8,
+                            ),
+                            leading: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).primaryColor.withOpacity(0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  admin.name.isNotEmpty
+                                      ? admin.name[0].toUpperCase()
+                                      : '?',
+                                  style: TextStyle(
+                                    color: Theme.of(context).primaryColor,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            title: Text(
+                              admin.name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(admin.email),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showStudentsListModal() {
+    final l10n = AppLocalizations.of(context)!;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.9,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (_, controller) => Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    Text(
+                      l10n.students,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: Container(
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.1)),
+                  ),
+                  child: TextField(
+                    controller: _elevSearchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search...',
+                      hintStyle: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[400],
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        size: 20,
+                        color: Colors.grey[400],
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _elevSearchController,
+                  builder: (context, value, child) {
+                    final query = value.text.toLowerCase();
+                    final filteredElevi = _allElevi.where((elev) {
+                      return elev.name.toLowerCase().contains(query) ||
+                          elev.email.toLowerCase().contains(query) ||
+                          elev.codMatricol.toLowerCase().contains(query);
+                    }).toList();
+
+                    if (filteredElevi.isEmpty) {
+                      final isRo = Localizations.localeOf(context).languageCode == 'ro';
+                      return Center(child: Text(isRo ? "Nu există elevi" : "No students"));
+                    }
+
+                    return ListView.builder(
+                      controller: controller,
+                      itemCount: filteredElevi.length,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 8,
+                      ),
+                      itemBuilder: (context, index) {
+                        final elev = filteredElevi[index];
+                        final isFirst = index == 0;
+                        final isLast = index == filteredElevi.length - 1;
+                        final bool isActive = elev.activ == 1;
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 1),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).cardColor,
+                            borderRadius: BorderRadius.vertical(
+                              top: isFirst
+                                  ? const Radius.circular(20)
+                                  : Radius.zero,
+                              bottom: isLast
+                                  ? const Radius.circular(20)
+                                  : Radius.zero,
+                            ),
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 8,
+                            ),
+                            leading: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: isActive
+                                    ? Colors.green.withOpacity(0.1)
+                                    : Colors.grey.withOpacity(0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  elev.name.isNotEmpty
+                                      ? elev.name[0].toUpperCase()
+                                      : '?',
+                                  style: TextStyle(
+                                    color: isActive
+                                        ? Colors.green
+                                        : Colors.grey,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            title: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    elev.name,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                if (isActive)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      l10n.active,
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.green[700],
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            subtitle: Text(elev.email),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showEnrolledStudentsModal() {
+    final l10n = AppLocalizations.of(context)!;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.9,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (_, controller) => Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    Text(
+                      l10n.enrolledStudents ?? "Enrolled Students",
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: Container(
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.1)),
+                  ),
+                  child: TextField(
+                    controller: _elevSearchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search...',
+                      hintStyle: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[400],
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        size: 20,
+                        color: Colors.grey[400],
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _elevSearchController,
+                  builder: (context, value, child) {
+                    final query = value.text.toLowerCase();
+                    final filteredElevi = _currentElevi.where((elev) {
+                      return elev.name.toLowerCase().contains(query) ||
+                          elev.email.toLowerCase().contains(query) ||
+                          elev.codMatricol.toLowerCase().contains(query);
+                    }).toList();
+
+                    if (filteredElevi.isEmpty) {
+                      final isRo = Localizations.localeOf(context).languageCode == 'ro';
+                      return Center(child: Text(isRo ? "Nu există elevi" : "No students"));
+                    }
+
+                    return ListView.builder(
+                      controller: controller,
+                      itemCount: filteredElevi.length,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 8,
+                      ),
+                      itemBuilder: (context, index) {
+                        final elev = filteredElevi[index];
+                        final isFirst = index == 0;
+                        final isLast = index == filteredElevi.length - 1;
+                        final bool isActive = elev.activ == 1;
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 1),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).cardColor,
+                            borderRadius: BorderRadius.vertical(
+                              top: isFirst
+                                  ? const Radius.circular(20)
+                                  : Radius.zero,
+                              bottom: isLast
+                                  ? const Radius.circular(20)
+                                  : Radius.zero,
+                            ),
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 8,
+                            ),
+                            leading: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: isActive
+                                    ? Colors.green.withOpacity(0.1)
+                                    : Colors.grey.withOpacity(0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  elev.name.isNotEmpty
+                                      ? elev.name[0].toUpperCase()
+                                      : '?',
+                                  style: TextStyle(
+                                    color: isActive
+                                        ? Colors.green
+                                        : Colors.grey,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            title: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    elev.name,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                if (isActive)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      l10n.active,
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.green[700],
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            subtitle: Text(elev.email),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   String _getSelectedDateText() {
     String formatTime(TimeOfDay time) {
       final h = time.hour.toString().padLeft(2, '0');
@@ -101,6 +729,32 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
 
     final hasCustomTime = _startTime.hour != 0 || _startTime.minute != 0 || _endTime.hour != 23 || _endTime.minute != 59;
     final timeStr = hasCustomTime ? " (${formatTime(_startTime)} - ${formatTime(_endTime)})" : "";
+
+    if (_presetKey != null) {
+      final locale = Localizations.localeOf(context).languageCode;
+      final isRo = locale == 'ro';
+      String presetLabel = '';
+      switch (_presetKey) {
+        case 'today':
+          presetLabel = isRo ? "Astăzi" : "Today";
+          break;
+        case 'thisWeek':
+          presetLabel = isRo ? "Săptămâna aceasta" : "This Week";
+          break;
+        case 'last7Days':
+          presetLabel = isRo ? "Ultimele 7 zile" : "Last 7 Days";
+          break;
+        case 'thisMonth':
+          presetLabel = isRo ? "Luna aceasta" : "This Month";
+          break;
+        case 'last30Days':
+          presetLabel = isRo ? "Ultimele 30 zile" : "Last 30 Days";
+          break;
+        default:
+          presetLabel = isRo ? "Luna aceasta" : "This Month";
+      }
+      return "$presetLabel$timeStr";
+    }
 
     if (_rangeStart != null && _rangeEnd != null) {
       return "${DateFormat('MMM d').format(_rangeStart!)} - ${DateFormat('MMM d').format(_rangeEnd!)}$timeStr";
@@ -181,8 +835,16 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
       eDate = DateTime(_focusedDay.year, _focusedDay.month + 1, 1);
     }
 
+    // Cap eDate to not show future periods
+    final now = DateTime.now();
+    final capDate = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
+    if (eDate.isAfter(capDate)) {
+      eDate = capDate;
+    }
+
     final duration = eDate.difference(sDate);
-    final days = duration.inDays;
+    int days = duration.inDays;
+    if (days <= 0) days = 1;
 
     if (days <= 1) {
       _currentChartMode = 'hourly';
@@ -217,16 +879,23 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
       }
     }
 
+    final now = DateTime.now();
+    int maxHour = 24;
+    if (startDate.year == now.year && startDate.month == now.month && startDate.day == now.day) {
+      maxHour = now.hour + 1;
+      if (maxHour > 24) maxHour = 24;
+    }
+
     for (var entry in studentHourlyTotal.entries) {
-      multiSpots[entry.key] = List.generate(24, (i) => FlSpot(i.toDouble(), entry.value[i].toDouble()));
+      multiSpots[entry.key] = List.generate(maxHour, (i) => FlSpot(i.toDouble(), entry.value[i].toDouble()));
     }
 
     final accentColor = Theme.of(context).colorScheme.secondary;
     if (mounted) {
       setState(() {
         _multiStudentSpots = multiSpots;
-        _totalScansRaw = totalCounts.map((e) => e.toDouble()).toList();
-        _totalScansBarGroups = List.generate(24, (i) => BarChartGroupData(x: i, barRods: [
+        _totalScansRaw = totalCounts.sublist(0, maxHour).map((e) => e.toDouble()).toList();
+        _totalScansBarGroups = List.generate(maxHour, (i) => BarChartGroupData(x: i, barRods: [
           BarChartRodData(
             toY: totalCounts[i].toDouble(), 
             gradient: LinearGradient(colors: [accentColor, accentColor.withOpacity(0.4)], begin: Alignment.bottomCenter, end: Alignment.topCenter),
@@ -364,7 +1033,7 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
 
   Future<void> _handleDoubleTap(DateTime date, BuildContext context, [StateSetter? setDialogState]) async {
     final l10n = AppLocalizations.of(context)!;
-    if (_rangeStart != null && _rangeEnd != null) {
+    if (_rangeStart != null && _rangeEnd != null && !isSameDay(_rangeStart, _rangeEnd)) {
       if (isSameDay(date, _rangeStart)) {
         final TimeOfDay? picked = await showTimePicker(
           context: context,
@@ -584,11 +1253,14 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
                             onTap: () {
                               final today = DateTime.now();
                               setState(() {
+                                _presetKey = 'today';
                                 _chartPeriod = ChartPeriod.day;
                                 _isChartRolling = false;
                                 _rangeStart = DateTime(today.year, today.month, today.day);
                                 _rangeEnd = _rangeStart;
                                 _focusedDay = _rangeStart!;
+                                _startTime = const TimeOfDay(hour: 0, minute: 0);
+                                _endTime = const TimeOfDay(hour: 23, minute: 59);
                               });
                               setDialogState(() {});
                             },
@@ -610,13 +1282,17 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
                                   _isChartRolling = false;
                                 }
                                 if (_isChartRolling) {
+                                  _presetKey = 'last7Days';
                                   _rangeStart = today.subtract(const Duration(days: 6));
                                   _rangeEnd = today;
                                 } else {
+                                  _presetKey = 'thisWeek';
                                   _rangeStart = today.subtract(Duration(days: today.weekday - 1));
                                   _rangeEnd = today;
                                 }
                                 _focusedDay = _rangeStart!;
+                                _startTime = const TimeOfDay(hour: 0, minute: 0);
+                                _endTime = const TimeOfDay(hour: 23, minute: 59);
                               });
                               setDialogState(() {});
                             },
@@ -638,14 +1314,18 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
                                   _isChartRolling = false;
                                 }
                                 if (_isChartRolling) {
+                                  _presetKey = 'last30Days';
                                   _rangeStart = today.subtract(const Duration(days: 29));
                                   _rangeEnd = today;
                                 } else {
+                                  _presetKey = 'thisMonth';
                                   _rangeStart = DateTime(now.year, now.month, 1);
                                   final nextMonth = DateTime(now.year, now.month + 1, 1);
                                   _rangeEnd = nextMonth.subtract(const Duration(days: 1));
                                 }
                                 _focusedDay = _rangeStart!;
+                                _startTime = const TimeOfDay(hour: 0, minute: 0);
+                                _endTime = const TimeOfDay(hour: 23, minute: 59);
                               });
                               setDialogState(() {});
                             },
@@ -733,6 +1413,7 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
               _singleTapTimer?.cancel();
               _singleTapTimer = Timer(const Duration(milliseconds: 250), () {
                 setState(() {
+                  _presetKey = null;
                   _focusedDay = focusedDay;
                   if (_rangeStart != null && _rangeEnd == null && isSameDay(_rangeStart, selectedDay)) {
                     _rangeStart = null;
@@ -776,6 +1457,7 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
               _singleTapTimer = Timer(const Duration(milliseconds: 250), () {
                 if (selectedDay != null) {
                   setState(() {
+                    _presetKey = null;
                     _focusedDay = focusedDay;
                     if (_rangeStart != null && _rangeEnd == null && isSameDay(_rangeStart, selectedDay)) {
                       _rangeStart = null;
@@ -799,6 +1481,14 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
               });
             },
             calendarStyle: CalendarStyle(
+              defaultTextStyle: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
+              weekendTextStyle: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black),
+              outsideTextStyle: TextStyle(color: (Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black).withOpacity(0.3)),
+              todayTextStyle: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color, fontWeight: FontWeight.bold),
+              selectedTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              rangeStartTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              rangeEndTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              withinRangeTextStyle: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
               rangeHighlightColor: Theme.of(context).colorScheme.secondary.withOpacity(0.2),
               rangeStartDecoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.secondary,
@@ -821,9 +1511,14 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
                 shape: BoxShape.circle,
               ),
             ),
+            daysOfWeekStyle: DaysOfWeekStyle(
+              weekdayStyle: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color, fontWeight: FontWeight.bold),
+              weekendStyle: TextStyle(color: Theme.of(context).colorScheme.secondary, fontWeight: FontWeight.bold),
+            ),
             headerStyle: HeaderStyle(
               formatButtonVisible: false,
               titleCentered: true,
+              titleTextStyle: TextStyle(color: Theme.of(context).textTheme.titleLarge?.color, fontSize: 16, fontWeight: FontWeight.bold),
               leftChevronIcon: Icon(Icons.chevron_left, color: Theme.of(context).colorScheme.secondary),
               rightChevronIcon: Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.secondary),
             ),
@@ -846,12 +1541,18 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
     }
 
     final lines = <LineChartBarData>[];
-    for (var entry in _multiStudentSpots.entries) {
+    final entriesList = _multiStudentSpots.entries.toList();
+    final N = entriesList.length;
+    for (int i = 0; i < N; i++) {
+      final entry = entriesList[i];
+      final studentId = entry.key;
+      final offset = N > 1 ? (i - (N - 1) / 2.0) * 0.03 : 0.0;
+      final shiftedSpots = entry.value.map((spot) => FlSpot(spot.x, spot.y + offset)).toList();
       lines.add(
         LineChartBarData(
-          spots: entry.value,
-          isCurved: true,
-          color: _getStudentColor(entry.key),
+          spots: shiftedSpots,
+          isCurved: false,
+          color: _getStudentColor(studentId),
           barWidth: 4,
           isStrokeCapRound: true,
           dotData: FlDotData(show: false),
@@ -865,6 +1566,29 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
       isLoading: _isLoadingCharts,
       child: LineChart(
         LineChartData(
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              tooltipBgColor: Colors.blueGrey.withOpacity(0.8),
+              getTooltipItems: (touchedSpots) {
+                return touchedSpots.map((spot) {
+                  if (spot.barIndex >= entriesList.length) return null;
+                  final entry = entriesList[spot.barIndex];
+                  final studentId = entry.key;
+                  final name = _getStudentName(studentId);
+                  final scans = (spot.spotIndex >= 0 && spot.spotIndex < entry.value.length)
+                      ? entry.value[spot.spotIndex].y.toInt()
+                      : spot.y.round();
+                  return LineTooltipItem(
+                    '$name: $scans',
+                    TextStyle(
+                      color: _getStudentColor(studentId),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  );
+                }).toList();
+              },
+            ),
+          ),
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
@@ -880,6 +1604,9 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
                 reservedSize: 30,
                 interval: 1,
                 getTitlesWidget: (value, meta) {
+                  if (value < 0 || value % 1 != 0) {
+                    return const SizedBox();
+                  }
                   if (_currentChartMode == 'hourly') {
                     if (value.toInt() % 4 != 0) return const SizedBox();
                     return Padding(
@@ -980,6 +1707,9 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
                 showTitles: true,
                 reservedSize: 22,
                 getTitlesWidget: (value, meta) {
+                  if (value < 0 || value % 1 != 0) {
+                    return const SizedBox();
+                  }
                   if (_currentChartMode == 'hourly') return const SizedBox();
                   if (_currentChartMode == 'weekly') {
                     return Text('W${value.toInt() + 1}', style: TextStyle(fontSize: 8, color: labelColor));
@@ -1105,11 +1835,12 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
                                 setState(() {
                                   _rangeStart = null;
                                   _rangeEnd = null;
+                                  _presetKey = 'thisMonth';
                                 });
                                 _fetchChartData();
                               },
-                              backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
-                              labelStyle: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold),
+                              backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                              labelStyle: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold),
                               side: BorderSide.none,
                             ),
                           ..._selectedStudentFilters.map((id) => Chip(
@@ -1159,19 +1890,19 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
             bottom: 0,
             left: 0,
             child: FloatingStatsSidebar(
-              professorsCount: 0,
+              professorsCount: _currentAdmins.length,
               studentsCount: _allElevi.length,
               enrolledCount: _currentElevi.length,
-              scansToday: 0,
-              scansWeek: 0,
-              scansMonth: 0,
-              weekLabel: l10n.thisWeek,
-              monthLabel: l10n.thisMonth,
-              onTapWeek: () {},
-              onTapMonth: () {},
-              onTapProfessors: () {},
-              onTapStudents: () {},
-              onTapEnrolled: () {},
+              scansToday: _scansToday,
+              scansWeek: _useRollingWeekStats ? _scansRollingWeek : _scansCurrentWeek,
+              scansMonth: _useRollingMonthStats ? _scansRollingMonth : _scansCurrentMonth,
+              weekLabel: _useRollingWeekStats ? '${l10n.scansWeek} ${l10n.sevenDays}' : '${l10n.scansWeek} ${l10n.thisWeek}',
+              monthLabel: _useRollingMonthStats ? '${l10n.scansMonth} ${l10n.thirtyDays}' : '${l10n.scansMonth} ${l10n.thisMonth}',
+              onTapWeek: () => setState(() => _useRollingWeekStats = !_useRollingWeekStats),
+              onTapMonth: () => setState(() => _useRollingMonthStats = !_useRollingMonthStats),
+              onTapProfessors: _showProfessorsListModal,
+              onTapStudents: _showStudentsListModal,
+              onTapEnrolled: _showEnrolledStudentsModal,
               l10n: l10n,
             ),
           ),

@@ -1,3 +1,20 @@
+DateTime _parseDateTime(String s) {
+  final parsed = DateTime.parse(s);
+  if (!parsed.isUtc && 
+      !s.contains('Z') && 
+      !s.contains('+') && 
+      !(s.contains('T') && s.substring(s.indexOf('T')).contains('-')) &&
+      !(s.contains(' ') && s.substring(s.indexOf(' ')).contains('-'))) {
+    try {
+      final utcStr = s.endsWith('Z') ? s : (s.contains('T') ? '${s}Z' : '${s.replaceAll(' ', 'T')}Z');
+      return DateTime.parse(utcStr).toLocal();
+    } catch (_) {
+      return parsed.toLocal();
+    }
+  }
+  return parsed.toLocal();
+}
+
 class ScanLog {
   final int idElev;
   final DateTime scanTime;
@@ -14,7 +31,7 @@ class ScanLog {
   factory ScanLog.fromJson(Map<String, dynamic> json) {
     return ScanLog(
       idElev: json['id_elev'] as int,
-      scanTime: DateTime.parse(json['scan_time'] as String),
+      scanTime: _parseDateTime(json['scan_time'] as String),
       token: json['token'] as String,
       name: json['name'] as String,
     );
@@ -37,8 +54,8 @@ class ScanLogResponse {
   factory ScanLogResponse.fromJson(Map<String, dynamic> json) {
     return ScanLogResponse(
       count: json['count'] as int,
-      start: DateTime.parse(json['start'] as String),
-      end: DateTime.parse(json['end'] as String),
+      start: _parseDateTime(json['start'] as String),
+      end: _parseDateTime(json['end'] as String),
       data: (json['data'] as List<dynamic>)
           .map((e) => ScanLog.fromJson(e as Map<String, dynamic>))
           .toList(),

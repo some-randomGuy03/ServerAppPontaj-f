@@ -845,7 +845,7 @@ abstract class AppLocalizations {
   /// No description provided for @helpSlide3Desc.
   ///
   /// In ro, this message translates to:
-  /// **'Ȟine apăsat pe ziua selectată (sau pe fiecare capăt al intervalului) pentru a selecta o oră de început şi de sfârşit.'**
+  /// **'Ține apăsat pe ziua selectată (sau pe fiecare capăt al intervalului) pentru a selecta o oră de început şi de sfârşit.'**
   String get helpSlide3Desc;
 
   /// No description provided for @viewDetailedStudentReports.
