@@ -838,6 +838,13 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final labelColor = isDark ? Colors.white54 : Colors.grey[600];
 
+    DateTime sDate;
+    if (_rangeStart != null) {
+      sDate = DateTime(_rangeStart!.year, _rangeStart!.month, _rangeStart!.day);
+    } else {
+      sDate = DateTime(_focusedDay.year, _focusedDay.month, 1);
+    }
+
     final lines = <LineChartBarData>[];
     for (var entry in _multiStudentSpots.entries) {
       lines.add(
@@ -880,10 +887,11 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
                       child: Text('${value.toInt()}h', style: TextStyle(fontSize: 10, color: labelColor)),
                     );
                   } else if (_currentChartMode == 'daily') {
+                    final date = sDate.add(Duration(days: value.toInt()));
                     return Padding(
                       padding: const EdgeInsets.only(top: 8.0),
                       child: Text(
-                        (value.toInt() + 1).toString(),
+                        date.day.toString(),
                         style: TextStyle(fontSize: 10, color: labelColor),
                       ),
                     );
@@ -939,6 +947,13 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
     final labelColor = isDark ? Colors.white54 : Colors.grey[600];
     final accentColor = Theme.of(context).colorScheme.secondary;
 
+    DateTime sDate;
+    if (_rangeStart != null) {
+      sDate = DateTime(_rangeStart!.year, _rangeStart!.month, _rangeStart!.day);
+    } else {
+      sDate = DateTime(_focusedDay.year, _focusedDay.month, 1);
+    }
+
     final reactiveGroups = List.generate(_totalScansRaw.length, (i) => BarChartGroupData(x: i, barRods: [
       BarChartRodData(
         toY: _totalScansRaw[i], 
@@ -966,7 +981,13 @@ class _StudentReportsScreenState extends State<StudentReportsScreen> {
                 reservedSize: 22,
                 getTitlesWidget: (value, meta) {
                   if (_currentChartMode == 'hourly') return const SizedBox();
-                  return Text((value.toInt() + 1).toString(), style: TextStyle(fontSize: 8, color: labelColor));
+                  if (_currentChartMode == 'weekly') {
+                    return Text('W${value.toInt() + 1}', style: TextStyle(fontSize: 8, color: labelColor));
+                  } else if (_currentChartMode == 'monthly') {
+                    return Text('M${value.toInt() + 1}', style: TextStyle(fontSize: 8, color: labelColor));
+                  }
+                  final date = sDate.add(Duration(days: value.toInt()));
+                  return Text(date.day.toString(), style: TextStyle(fontSize: 8, color: labelColor));
                 },
               ),
             ),

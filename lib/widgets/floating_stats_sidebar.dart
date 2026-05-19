@@ -64,6 +64,7 @@ class _FloatingStatsSidebarState extends State<FloatingStatsSidebar> {
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOutQuint,
         width: _isSidebarHovered ? 260.0 : 64.0,
+        clipBehavior: Clip.hardEdge,
         decoration: BoxDecoration(
           color: theme.cardColor,
           borderRadius: BorderRadius.zero,
