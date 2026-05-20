@@ -99,10 +99,10 @@ The fastest way to deploy the application on a server is using Docker.
 
 ```bash
 # Start the container
-docker-compose up -d
+docker compose up -d
 
 # View logs
-docker-compose logs -f
+docker compose logs -f
 ```
 
 The app will be accessible at `http://localhost:24364`. For full production server setup (HTTPS, Reverse Proxy), see the [Server Setup Guide](docs/05-server-nginx.md).

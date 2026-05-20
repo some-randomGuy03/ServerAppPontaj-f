@@ -24,7 +24,7 @@ git clone https://github.com/your-username/ServerAppPontaj-f.git
 cd ServerAppPontaj-f
 
 # 2. Pornește cu Docker Compose (build inclus)
-docker-compose up -d
+docker compose up -d
 
 # 3. Verifică dacă rulează
 docker ps
@@ -82,22 +82,22 @@ Configurare Nginx pentru aplicație Flutter web:
 
 ```bash
 # Pornire (build + start)
-docker-compose up -d
+docker compose up -d
 
 # Pornire cu rebuild forțat (după modificări de cod)
-docker-compose up -d --build
+docker compose up -d --build
 
 # Oprire
-docker-compose down
+docker compose down
 
 # Vizualizare loguri în timp real
-docker-compose logs -f
+docker compose logs -f
 
 # Vizualizare loguri ultimele 100 linii
-docker-compose logs --tail=100
+docker compose logs --tail=100
 
 # Restart container
-docker-compose restart
+docker compose restart
 
 # Status containere
 docker ps
@@ -116,11 +116,11 @@ docker exec -it pontaj-admin-web sh
 git pull origin main
 
 # 2. Rebuild și restart
-docker-compose down
-docker-compose up -d --build
+docker compose down
+docker compose up -d --build
 
 # Sau mai scurt:
-docker-compose up -d --build --force-recreate
+docker compose up -d --build --force-recreate
 ```
 
 ---
@@ -130,19 +130,29 @@ docker-compose up -d --build --force-recreate
 #### Containerul nu pornește
 ```bash
 # Verifică logurile
-docker-compose logs web
+docker compose logs web
 
 # Erori frecvente:
 # - Port 24364 deja ocupat → schimbă portul în docker-compose.yml
 # - Spațiu disk insuficient → docker system prune -a
 ```
 
-#### Eroare "KeyError: ContainerConfig" (Docker Compose v1)
-Folosește comenzi Docker plain:
+#### Eroare "KeyError: ContainerConfig" (Docker Compose v1 vs v2)
+Această eroare apare deoarece folosești versiunea veche și depreciată de `docker-compose` (V1 în Python, v1.29.2) cu o versiune mai nouă de Docker Engine.
+
+**Soluția Recomandată:**
+Treci la versiunea modernă **Docker Compose V2** (scrisă în Go) pur și simplu rulând comanda fără cratimă:
+```bash
+docker compose up -d --build
+```
+*(Dacă nu este instalat, îl poți instala pe Linux folosind `sudo apt install docker-compose-plugin`).*
+
+**Alternativă (Comenzi plain Docker):**
+Dacă nu poți instala Compose V2 imediat, oprește manual containerele vechi care creează conflictul și rulează-le direct:
 ```bash
 # Oprire și ștergere container vechi
-docker stop pontaj-admin-web
-docker rm pontaj-admin-web
+docker stop pontaj-admin-web || true
+docker rm pontaj-admin-web || true
 
 # Build manual
 docker build -t pontaj-admin .
@@ -185,8 +195,8 @@ curl -I http://localhost:24364/
 2. **Firewall** — Permite doar porturile necesare (80, 443, 22)
 3. **Actualizează imaginile** periodic:
    ```bash
-   docker-compose pull
-   docker-compose up -d
+    docker compose pull
+    docker compose up -d
    ```
 4. **Nu expune portul 24364 direct** — Folosește reverse proxy Nginx
 5. **Backup date** — Dacă ai volume Docker cu date persistente
@@ -214,16 +224,16 @@ docker system df
 
 ```bash
 # Start
-docker-compose up -d
+docker compose up -d
 
 # Stop  
-docker-compose down
+docker compose down
 
 # Update (after code changes)
-git pull && docker-compose up -d --build
+git pull && docker compose up -d --build
 
 # View logs
-docker-compose logs -f
+docker compose logs -f
 
 # Check health
 curl http://localhost:24364/health
@@ -245,7 +255,7 @@ Developer pushes code
          ↓
     git pull (on server)
          ↓
-docker-compose up -d --build
+docker compose up -d --build
          ↓
   Docker builds Flutter web
          ↓
